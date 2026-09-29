@@ -1,0 +1,8 @@
+# A loja é transacional: o conteúdo institucional e o SEO principal ficam no site (Wix).
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /checkout
+Disallow: /carrinho
+Disallow: /pedido/
+Disallow: /embed

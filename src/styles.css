@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+/*
+ * Design system Doceria
+ * Artesanal, premium e contemporâneo: creme quente, cacau profundo e caramelo
+ * como acento. Serifa editorial (Fraunces) para títulos e sans humanista
+ * (Manrope) para interface. Sem gradientes chamativos, sem rosa excessivo.
+ */
+@theme {
+  --font-display: "Fraunces Variable", ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-cream-50: #fcf9f4;
+  --color-cream-100: #f7f0e6;
+  --color-cream-200: #efe4d3;
+  --color-cream-300: #e3d2b8;
+  --color-cream-400: #d2bb99;
+
+  --color-cocoa-950: #1c120c;
+  --color-cocoa-900: #2a1b12;
+  --color-cocoa-800: #3d2a1e;
+  --color-cocoa-700: #57402f;
+  --color-cocoa-600: #6f5745;
+  --color-cocoa-500: #8a7260;
+  --color-cocoa-400: #a89483;
+
+  --color-caramel-300: #e9b287;
+  --color-caramel-400: #d98a4e;
+  --color-caramel-500: #c46a2b;
+  --color-caramel-600: #a9561d;
+  --color-caramel-700: #8a4515;
+
+  --color-butter-100: #fbf1d8;
+  --color-butter-200: #f6e3b4;
+  --color-butter-300: #edcb7a;
+
+  --color-sage-100: #e6eadf;
+  --color-sage-600: #55663f;
+  --color-sage-700: #435232;
+
+  --color-berry-100: #f6e1dc;
+  --color-berry-600: #a23a2a;
+  --color-berry-700: #842c1f;
+
+  --color-sky-100: #e3ebf2;
+  --color-sky-700: #2f5673;
+
+  --radius-card: 1.25rem;
+  --shadow-soft: 0 1px 2px rgb(42 27 18 / 0.06), 0 8px 24px -12px rgb(42 27 18 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(42 27 18 / 0.06), 0 18px 40px -18px rgb(42 27 18 / 0.35);
+
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-slide-up: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-cream-50);
+    color: var(--color-cocoa-900);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: var(--color-butter-200);
+    color: var(--color-cocoa-900);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-caramel-500);
+    outline-offset: 2px;
+  }
+
+  input, textarea, select, button {
+    font: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Modo incorporado (Wix): fundo transparente e sem rolagem dupla. */
+html.embed-mode,
+html.embed-mode body {
+  background: transparent;
+}
+html.embed-mode.embed-bg-cream,
+html.embed-mode.embed-bg-cream body {
+  background: var(--color-cream-50);
+}
+
+@layer components {
+  .container-page {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 640px) {
+    .container-page { padding-inline: 1.5rem; }
+  }
+
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-caramel-600);
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-cream-200);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-cream-100) 0%, var(--color-cream-200) 50%, var(--color-cream-100) 100%);
+    background-size: 200% 100%;
+    animation: skeleton 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}
