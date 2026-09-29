@@ -234,8 +234,8 @@ create trigger delivery_rules_audit after insert or update or delete on public.d
   for each row execute function public.audit_row_change();
 create trigger store_settings_audit after update on public.store_settings
   for each row execute function public.audit_row_change();
-create trigger profiles_audit after insert or update or delete on public.profiles
-  for each row execute function public.audit_row_change();
+-- Alterações na equipe são auditadas pela Edge Function admin-users (com o
+-- autor da mudança), por isso profiles não usa o gatilho genérico.
 
 -- store_settings.updated_by
 create or replace function public.store_settings_set_actor()
