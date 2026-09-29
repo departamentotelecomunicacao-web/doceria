@@ -43,6 +43,11 @@ export interface ResolveRouteOptions {
   requesterHash: string;
   cacheTtlHours: number;
   now?: () => Date;
+  /**
+   * Executado antes de cada chamada paga ao provedor (cache miss). Usado para
+   * o teto global de chamadas por hora: excedido, não chamamos a API.
+   */
+  beforeProviderCall?: () => Promise<boolean>;
   onProviderResult?: (result: RouteResult, ms: number) => void;
 }
 
@@ -93,6 +98,15 @@ export async function resolveRouteQuote(options: ResolveRouteOptions): Promise<R
   const originWaypoint: Waypoint = origin.lat !== null && origin.lng !== null
     ? { lat: Number(origin.lat), lng: Number(origin.lng) }
     : { address: origin.address };
+
+  if (options.beforeProviderCall && !(await options.beforeProviderCall())) {
+    throw new AppError(
+      503,
+      "ROUTING_UNAVAILABLE",
+      "Não foi possível calcular a entrega automaticamente.",
+      { ...WHATSAPP_FALLBACK },
+    );
+  }
 
   const startedAt = Date.now();
   const result = await routing.computeRoute(originWaypoint, { address: addressToRoutingQuery(normalized) });

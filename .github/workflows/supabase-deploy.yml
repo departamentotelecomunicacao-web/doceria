@@ -1,0 +1,60 @@
+name: Deploy do backend (Supabase)
+
+# Aplica SOMENTE migrations novas (supabase db push) e publica as Edge
+# Functions no projeto de produção. Nunca executa reset nem seed.
+# Execução manual e protegida pelo environment "production" (configure
+# revisores obrigatórios em Settings > Environments).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: 'Digite "producao" para confirmar'
+        required: true
+      aplicar_migrations:
+        description: "Aplicar migrations pendentes"
+        type: boolean
+        default: true
+      publicar_funcoes:
+        description: "Publicar Edge Functions"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Confirmação
+        if: inputs.confirmar != 'producao'
+        run: |
+          echo "::error::Confirmação inválida. Digite producao."
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Vincular projeto
+        run: npx supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Migrations pendentes (simulação)
+        if: inputs.aplicar_migrations
+        run: npx supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Aplicar migrations
+        if: inputs.aplicar_migrations
+        run: npx supabase db push --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Publicar Edge Functions
+        if: inputs.publicar_funcoes
+        run: npx supabase functions deploy delivery-quote create-order admin-users --project-ref "$PROJECT_REF"

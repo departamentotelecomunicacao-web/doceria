@@ -7,13 +7,14 @@ import { resolveRouteQuote } from "../_shared/delivery.ts";
 import { AppError } from "../_shared/errors.ts";
 import { clientIp, createHandler, jsonResponse, log, readJsonBody } from "../_shared/http.ts";
 import { createRoutingProvider } from "../_shared/routing/index.ts";
-import { enforceRateLimit, requesterHash } from "../_shared/security.ts";
+import { enforceRateLimit, requesterHash, routingBudgetGuard } from "../_shared/security.ts";
 import { parseQuoteRequest } from "../_shared/validation.ts";
 
 const getEnv = (name: string) => Deno.env.get(name);
 const db = new Db(dbConfigFromEnv(getEnv));
 const routing = createRoutingProvider(getEnv);
 const cacheTtlHours = Number(getEnv("ROUTE_CACHE_TTL_HOURS") ?? "") || 168;
+const routingBudget = routingBudgetGuard(db, Number(getEnv("ROUTING_MAX_CALLS_PER_HOUR") ?? "") || 300);
 const rateLimit = Number(getEnv("QUOTE_RATE_LIMIT_PER_10_MIN") ?? "") || 30;
 
 interface FeeResult {
@@ -48,6 +49,7 @@ Deno.serve(createHandler(getEnv, "delivery-quote", async (req, cors) => {
     address: parsed.value.address,
     requesterHash: requester,
     cacheTtlHours,
+    beforeProviderCall: routingBudget,
     onProviderResult: (result, ms) =>
       log("delivery-quote.provider", {
         provider: result.provider,

@@ -36,3 +36,12 @@ export async function enforceRateLimit(db: Db, rule: RateLimitRule, hash: string
     );
   }
 }
+
+/**
+ * Teto global de chamadas pagas à API de mapas por hora (proteção de custo,
+ * independente do IP). Excedido: a entrega segue pelo WhatsApp.
+ */
+export function routingBudgetGuard(db: Db, limitPerHour: number): () => Promise<boolean> {
+  return () =>
+    db.rpc<boolean>("rate_limit_hit", { p_key: "routing:global", p_limit: limitPerHour, p_window_seconds: 3600 });
+}

@@ -57,6 +57,11 @@ grant insert, update, delete on public.categories, public.products, public.produ
   to authenticated;
 grant update on public.store_settings to authenticated;
 
+-- Tabelas e sequências criadas no futuro nascem fechadas para anon e
+-- authenticated: cada nova tabela precisa de RLS + GRANT explícitos.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+
 -- -----------------------------------------------------------------------------
 -- Políticas
 -- -----------------------------------------------------------------------------

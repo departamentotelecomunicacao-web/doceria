@@ -32,7 +32,8 @@ if (!existsSync(functionsEnv) || useStub) {
       .replace(/^# GOOGLE_ROUTES_ENDPOINT=.*$/m, "GOOGLE_ROUTES_ENDPOINT=http://host.docker.internal:54400/directions/v2:computeRoutes")
       .replace(/^ROUTING_TIMEOUT_MS=.*$/m, "ROUTING_TIMEOUT_MS=4000")
       .replace(/^QUOTE_RATE_LIMIT_PER_10_MIN=.*$/m, "QUOTE_RATE_LIMIT_PER_10_MIN=1000")
-      .replace(/^ORDER_RATE_LIMIT_PER_10_MIN=.*$/m, "ORDER_RATE_LIMIT_PER_10_MIN=1000");
+      .replace(/^ORDER_RATE_LIMIT_PER_10_MIN=.*$/m, "ORDER_RATE_LIMIT_PER_10_MIN=1000")
+      .replace(/^ROUTING_MAX_CALLS_PER_HOUR=.*$/m, "ROUTING_MAX_CALLS_PER_HOUR=100000");
   }
   writeFileSync(functionsEnv, content);
 }
