@@ -1,6 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAdminClient } from "@/lib/supabase";
+import { getAdminClient, hadStoredAdminSession } from "@/lib/supabase";
 import type { AppRole } from "@/types/domain";
 
 export interface StaffProfile {
@@ -66,6 +66,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     client.auth.getSession().then(({ data }) => {
       if (!mounted) return;
+      if (!data.session && hadStoredAdminSession() && !manualSignOut.current) {
+        // A sessão salva não pôde ser renovada durante a inicialização.
+        setSignOutReason("Sua sessão expirou. Entre novamente.");
+      }
       setSession(data.session);
       void loadProfile(data.session);
     });

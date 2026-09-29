@@ -38,7 +38,8 @@ export default tseslint.config(
   {
     files: ["tests/**/*.{ts,mjs}", "scripts/**/*.mjs", "*.config.ts"],
     languageOptions: { globals: { ...globals.node } },
-    rules: { "no-console": "off" },
+    // Fixtures do Playwright usam um parâmetro chamado "use" (não é hook do React).
+    rules: { "no-console": "off", "react-hooks/rules-of-hooks": "off" },
   },
   {
     files: ["public/**/*.js"],

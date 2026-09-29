@@ -19,7 +19,9 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "stub:routes": "node tests/stubs/google-routes-stub.mjs",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "env:local": "node scripts/local-env.mjs",
+    "env:test": "node scripts/local-env.mjs --stub"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
@@ -45,6 +47,7 @@
     "eslint-plugin-react-refresh": "0.4.26",
     "globals": "17.12.0",
     "jsdom": "26.1.0",
+    "supabase": "2.118.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.0",

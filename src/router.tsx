@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import { RouteFallback } from "@/components/RouteFallback";
 import { StoreLayout } from "@/components/store/StoreLayout";
 import NotFound from "@/pages/NotFound";
 import Home from "@/pages/store/Home";
@@ -53,6 +54,14 @@ const routes: RouteObject[] = [
   },
 ];
 
-export const router = createBrowserRouter(routes, {
+function withFallback(list: RouteObject[]): RouteObject[] {
+  return list.map((route) => ({
+    ...route,
+    ...(route.lazy ? { HydrateFallback: RouteFallback } : {}),
+    ...(route.children ? { children: withFallback(route.children) } : {}),
+  })) as RouteObject[];
+}
+
+export const router = createBrowserRouter(withFallback(routes), {
   basename: import.meta.env.BASE_URL.replace(/\/$/, "") || "/",
 });
