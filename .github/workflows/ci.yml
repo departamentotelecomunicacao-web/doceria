@@ -61,19 +61,27 @@ jobs:
       - name: Variáveis locais (chaves do supabase status + stub de rotas)
         run: npm run env:test
 
+      # O stub só responde GET em /__stats; esperas com HEAD nunca terminam.
       - name: Stub da Google Routes API
+        timeout-minutes: 2
         run: |
           nohup node tests/stubs/google-routes-stub.mjs > stub.log 2>&1 &
-          npx --yes wait-on@8 http://127.0.0.1:54400/__stats
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:54400/__stats > /dev/null && exit 0
+            sleep 1
+          done
+          echo "Stub da Routes API não respondeu"; cat stub.log; exit 1
 
       - name: Servir Edge Functions
+        timeout-minutes: 5
         run: |
           nohup npx supabase functions serve --env-file supabase/functions/.env > functions.log 2>&1 &
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             code=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS http://127.0.0.1:54321/functions/v1/create-order || true)
-            [ "$code" = "204" ] && break
+            [ "$code" = "204" ] && exit 0
             sleep 2
           done
+          echo "Edge Functions não subiram"; cat functions.log; exit 1
 
       - name: Testes de banco (pgTAP)
         run: npx supabase test db
