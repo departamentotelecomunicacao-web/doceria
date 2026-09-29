@@ -1,0 +1,92 @@
+-- Auxiliares dos testes pgTAP. Incluído por cada arquivo com \ir e criado
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+
+-- dentro da transação do teste (desfeito no ROLLBACK final).
+
+create schema if not exists tests;
+grant usage on schema tests to anon, authenticated, service_role;
+
+create or replace function tests.first_slot(p_type text)
+returns text
+language sql
+security definer
+set search_path = ''
+as $$
+  select public.get_fulfillment_slots(p_type::public.fulfillment_type) -> 0 ->> 'start'
+$$;
+
+create or replace function tests.order_payload(
+  p_key text,
+  p_items jsonb,
+  p_expected integer,
+  p_method text default 'CASH',
+  p_type text default 'PICKUP',
+  p_address jsonb default null,
+  p_phone text default '+5528999887766'
+)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'idempotencyKey', p_key,
+    'customer', jsonb_build_object('name', 'Cliente Teste', 'phone', p_phone, 'email', 'cliente@teste.com'),
+    'fulfillment', jsonb_strip_nulls(jsonb_build_object(
+      'type', p_type,
+      'scheduledFor', tests.first_slot(p_type),
+      'address', p_address)),
+    'items', p_items,
+    'paymentMethod', p_method,
+    'expectedTotalCents', p_expected
+  )
+$$;
+
+create or replace function tests.item(p_product text, p_qty integer)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object('productId', p_product, 'quantity', p_qty)
+$$;
+
+-- Troca o usuário simulado (JWT) e o papel do banco.
+create or replace function tests.authenticate_as(p_user uuid)
+returns void
+language plpgsql
+as $$
+begin
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+end;
+$$;
+
+-- Estoque no início do teste (as asserções usam variações, não valores fixos).
+create table tests.initial_stock as
+select id, stock_available, stock_reserved from public.products;
+grant select on tests.initial_stock to anon, authenticated, service_role;
+
+create or replace function tests.stock_delta(p_product uuid)
+returns table (available_delta integer, reserved_delta integer)
+language sql
+security definer
+set search_path = ''
+as $$
+  select p.stock_available - i.stock_available, p.stock_reserved - i.stock_reserved
+  from public.products p
+  join tests.initial_stock i on i.id = p.id
+  where p.id = p_product
+$$;
+
+grant execute on all functions in schema tests to anon, authenticated, service_role;
+
+-- Usuários do seed
+-- owner    33333333-3333-4333-8333-000000000001
+-- admin    33333333-3333-4333-8333-000000000002
+-- operador 33333333-3333-4333-8333-000000000003
+-- Produtos do seed
+-- 22222222-2222-4222-8222-000000000001 Cookie Clássico  R$ 12,00  estoque 24
+-- 22222222-2222-4222-8222-000000000004 Nutella          R$ 15,00  estoque 12
+-- 22222222-2222-4222-8222-000000000006 Pistache         R$ 18,00  estoque 4
+-- 22222222-2222-4222-8222-000000000007 Doce de leite    R$ 15,00  estoque 0
