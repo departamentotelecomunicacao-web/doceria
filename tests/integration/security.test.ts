@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SUPABASE_URL, callFunction, createTestProduct, orderPayload, rest, signIn } from "../helpers/local";
+import { PUBLISHABLE_KEY, SUPABASE_URL, callFunction, createTestProduct, orderPayload, rest, signIn } from "../helpers/local";
 
 type ErrorResponse = { error: { code: string } };
 
@@ -11,6 +11,16 @@ describe("segurança: acesso público", () => {
       expect([401, 403]).toContain(result.status);
     },
   );
+
+  it("cadastro público no Auth fica bloqueado", async () => {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+      method: "POST",
+      headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: `intruso-${Date.now()}@example.com`, password: "senha-bem-longa-123" }),
+    });
+    expect(response.status).toBe(422);
+    expect((await response.json()).error_code).toBe("signup_disabled");
+  });
 
   it("visitante não altera preço nem estoque", async () => {
     const product = await createTestProduct({ stock: 5, priceCents: 2500 });

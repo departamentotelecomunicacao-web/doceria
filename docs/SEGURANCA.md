@@ -75,5 +75,5 @@ Cada pessoa tem sua conta. O sistema impede remover o último proprietário ativ
 - [ ] Nenhum segredo no repositório (`git grep -n "sb_secret_\|service_role\|AIza"` sem resultados).
 - [ ] `ALLOWED_ORIGINS` contém apenas os domínios da loja.
 - [ ] Chave do Google restrita à Routes API, com cota e alerta de orçamento.
-- [ ] Auth: cadastro público desativado, senha mínima de 10 caracteres, URL do site e redirecionamentos com o domínio da loja.
+- [ ] Auth: provedor Email **ligado** (é o login da equipe) com "Allow new users to sign up" **desligado**, senha mínima de 10 caracteres, URL do site e redirecionamentos com o domínio da loja. O teste `security.test.ts` confirma que o cadastro público é recusado.
 - [ ] Environment `production` do GitHub com revisores obrigatórios.
