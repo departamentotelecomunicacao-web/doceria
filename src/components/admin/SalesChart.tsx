@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatShortDate } from "@/lib/datetime";
 import { formatBRL } from "@/lib/money";
 
@@ -35,21 +35,34 @@ function compactBRL(cents: number): string {
  */
 export function SalesChart({ data }: { data: Point[] }) {
   const id = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [active, setActive] = useState<number | null>(null);
+
+  // Desenha na largura real (texto sempre em 11px, sem escalar o SVG).
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => setContainerWidth(Math.max(200, Math.floor(entry.contentRect.width))));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const max = useMemo(() => niceMax(Math.max(...data.map((point) => point.salesCents), 0)), [data]);
   const ticks = [0, 0.5, 1].map((ratio) => Math.round(max * ratio));
-  const width = Math.max(data.length * 28, 280);
+  const width = containerWidth - 56;
   const slot = width / Math.max(data.length, 1);
-  const barWidth = Math.min(MAX_BAR, slot - GAP * 2);
-  const labelEvery = Math.ceil(data.length / 8);
+  const barWidth = Math.max(2, Math.min(MAX_BAR, slot - GAP * 2));
+  const labelEvery = Math.ceil(data.length / Math.max(2, Math.floor(width / 64)));
   const activePoint = active !== null ? data[active] : null;
 
   return (
-    <figure className="space-y-3">
-      <div className="relative">
-        <svg
-          viewBox={`0 0 ${width + 56} ${HEIGHT + 28}`}
-          className="h-auto w-full overflow-visible"
+    <figure className="min-w-0 space-y-3">
+      <div className="relative w-full min-w-0 overflow-hidden" ref={containerRef} style={{ height: HEIGHT + 28 }}>
+        {containerWidth > 0 && <svg
+          width={width + 56}
+          height={HEIGHT + 28}
+          className="block overflow-visible"
           role="img"
           aria-labelledby={`${id}-desc`}
           onPointerLeave={() => setActive(null)}
@@ -104,11 +117,11 @@ export function SalesChart({ data }: { data: Point[] }) {
             })}
             <line x1={0} x2={width} y1={HEIGHT} y2={HEIGHT} stroke="var(--color-cream-300)" strokeWidth={1} />
           </g>
-        </svg>
+        </svg>}
         {activePoint && active !== null && (
           <div
             className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-xl border border-cream-200 bg-white px-3 py-2 text-xs shadow-lg"
-            style={{ left: `${((52 + active * slot + slot / 2) / (width + 56)) * 100}%` }}
+            style={{ left: `${52 + active * slot + slot / 2}px` }}
             role="status"
           >
             <p className="text-sm font-bold text-cocoa-900">{formatBRL(activePoint.salesCents)}</p>

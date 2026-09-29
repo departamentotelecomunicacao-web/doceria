@@ -130,7 +130,7 @@ export default function Dashboard() {
 
           <div className={cn("grid gap-6", data.daily.length > 1 && "lg:grid-cols-[1.4fr_1fr]")}>
             {data.daily.length > 1 && (
-              <section className="card p-5" aria-labelledby="grafico">
+              <section className="card min-w-0 p-5" aria-labelledby="grafico">
                 <h2 id="grafico" className="mb-3 font-display text-lg">Vendas por dia</h2>
                 <SalesChart data={data.daily} />
               </section>
