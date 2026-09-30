@@ -1,79 +1,61 @@
 # Segurança e LGPD
 
-## Modelo de ameaças e defesas
+O objetivo é segurança suficiente sem complicar a operação: a equipe só faz login; todas as regras ficam no banco.
+
+## Ameaças e defesas
 
 | Ameaça | Defesa | Onde é testado |
 |---|---|---|
-| Alterar preço, subtotal, frete ou total no navegador | O checkout só envia IDs, quantidades e dados; campos extras são rejeitados; o banco recalcula tudo e compara com o total exibido (`PRICE_CHANGED`) | `validation.test.ts`, `security.test.ts`, `02_orders.test.sql` |
-| Enviar distância ou coordenadas falsas | Endereço sem `lat/lng/distanceKm` (rejeitados); rota sempre calculada/validada no servidor; cotação amarrada ao hash do endereço e da origem | `delivery.test.ts`, `02_orders.test.sql` |
-| Quantidade negativa, zero, fracionada ou absurda | Validação na Edge Function e no banco (1 a 500; linhas negativas não compensam positivas) | `security.test.ts`, `02_orders.test.sql` |
-| Produto inexistente ou inativo | `PRODUCT_UNAVAILABLE` | idem |
-| Estoque negativo / venda acima do estoque | `CHECK (stock_available >= 0)`, função única de movimentação, `FOR UPDATE` nos produtos | `orders.test.ts` (concorrência), `03_lifecycle.test.sql` |
-| Duas compras simultâneas da última unidade | Locks de linha em ordem estável; só uma reserva vence | `orders.test.ts` |
-| Pedido duplicado (duplo clique, timeout, refresh, retry) | `idempotencyKey` + advisory lock + índice único; mesma chave devolve o mesmo pedido | `orders.test.ts`, `checkout.spec.ts` |
-| Alterar estoque direto pela API | Trigger bloqueia `UPDATE` de colunas de estoque fora das funções de movimentação | `01_security.test.sql` |
-| Ver pedidos de outras pessoas | Sem SELECT para `anon`; página pública só por `public_token` de 192 bits; endereço mascarado; telefone não aparece | `security.test.ts`, `03_lifecycle.test.sql` |
-| Manipular `publicOrderToken` | Formato validado; token inexistente devolve `null` sem diferenciar | idem |
-| Acessar o painel sem login | Rotas redirecionam ao login; **dados** protegidos por RLS e funções com checagem de papel | `admin.spec.ts`, `01_security.test.sql` |
-| Operador fazendo ações de administrador | RLS por papel (`has_min_role`) e `require_role` nas funções | `security.test.ts`, `01_security.test.sql` |
-| Sessão roubada ou expirada | Tokens do Supabase Auth com expiração e rotação de refresh; conta desativada é banida no Auth | `admin.spec.ts` |
-| Clickjacking no painel | Painel não renderiza dentro de iframe | `embed.spec.ts` |
-| Abuso das funções públicas | Rate limit por hash de IP; teto global de chamadas pagas à API de mapas | `delivery.test.ts` |
-| Vazamento de segredos | Frontend só recebe a chave publicável; chaves do Google e service role existem apenas nas Edge Functions; `.env` fora do Git; CI sem segredos para testes | revisão manual |
-| Injeção de SQL | PostgREST parametrizado; funções com `search_path = ''` e nomes qualificados | revisão manual |
-| XSS | React escapa conteúdo; nenhum `dangerouslySetInnerHTML`; CSP restritiva no build | revisão manual |
+| Alterar preço, frete ou total no navegador | O checkout envia só IDs, quantidades e dados; campos extras são recusados; o banco recalcula tudo e compara com o total exibido (`PRICE_CHANGED`) | `validation.test.ts`, `security.test.ts`, `02_orders.test.sql` |
+| Quantidade negativa, zero, fracionada ou absurda | Validação na função e no banco (1 a 99 por item) | idem |
+| Vender mais que o estoque / duas compras da última unidade | Produtos travados em ordem estável dentro da transação; `CHECK (stock >= 0)` | `orders.test.ts` (concorrência) |
+| Pedido duplicado (duplo clique, reenvio) | Chave de idempotência + trava; mesma chave devolve o mesmo pedido | `orders.test.ts`, `checkout.spec.ts` |
+| Ver pedidos de outras pessoas | Sem leitura para visitantes; página pública só pelo link de 192 bits; mostra primeiro nome e bairro, nunca telefone ou rua | `security.test.ts`, `03_lifecycle.test.sql` |
+| Painel sem login | Rotas levam ao login; dados protegidos por RLS | `admin.spec.ts`, `01_security.test.sql` |
+| Atendente alterando preço ou configurações | RLS: só o dono escreve em produtos e configurações; atendente usa funções específicas | `security.test.ts`, `01_security.test.sql` |
+| Cadastro de contas por estranhos | Cadastro público do Auth desligado; contas criadas pelo dono | `security.test.ts` |
+| Usar o site para disparar e-mails | E-mail sai só do servidor, com conteúdo montado a partir do pedido gravado; `notify-order` exige login da equipe | `notify.test.ts` |
+| Abuso da criação de pedidos | Limite por hash de IP | `http.test.ts` |
+| Clickjacking no painel | Painel não abre dentro de iframe | `embed.spec.ts` |
+| Vazamento de segredos | Navegador só recebe a chave publicável; chaves do EmailJS e do Supabase ficam nos segredos das funções | revisão manual |
+| XSS | React escapa conteúdo; e-mails escapam HTML; CSP no build | `emails.test.ts` |
 
-## RLS: resumo por tabela
+## RLS por tabela
 
-| Tabela | anon | equipe (authenticated com profile ativo) |
-|---|---|---|
-| `categories`, `products`, `product_images` | SELECT de itens ativos | SELECT tudo; escrita ADMIN+ (estoque só via funções) |
-| `customers`, `customer_addresses` | nada | SELECT ADMIN+ |
-| `orders`, `order_items`, `order_status_history`, `payment_records`, `inventory_*` | nada | SELECT equipe; escrita somente via funções |
-| `store_settings` | nada (recorte público via `get_public_store_config`) | SELECT equipe; UPDATE ADMIN+ |
-| `delivery_rules` | nada (resumo na configuração pública) | SELECT equipe; escrita ADMIN+ |
-| `delivery_quotes`, `audit_logs` | nada | SELECT ADMIN+ |
-| `profiles` | nada | cada um vê o próprio; equipe vê a equipe; escrita pela Edge Function `admin-users` |
-| `rate_limits` | nada | nada (somente service role) |
-| `storage.objects` (`product-images`) | leitura pública pela URL | escrita ADMIN+ |
+| Tabela | Visitante | Atendente | Dono |
+|---|---|---|---|
+| `categories`, `products` | lê itens ativos | lê tudo; disponibilidade e quantidade via função | tudo |
+| `orders`, `order_items`, `order_events`, `order_notifications` | nada (página pública via função) | lê; altera só por funções | igual ao atendente |
+| `store_settings` | nada (recorte público via função) | lê | lê e altera |
+| `profiles` | nada | vê a equipe | idem; gestão pela função `admin-users` |
+| `rate_limits` | nada | nada | nada |
+| Storage `product-images` | lê pela URL | lista | envia e remove fotos |
 
-Funções: `EXECUTE` revogado de `PUBLIC`, `anon` e `authenticated` e liberado uma a uma. Privilégios padrão do schema `public` foram fechados: uma tabela nova nasce inacessível até ganhar RLS e GRANT explícitos.
-
-## Papéis
-
-| Papel | Pode |
-|---|---|
-| OPERATOR | Ver e operar pedidos (status, pagamento, anotações), registrar pedidos, movimentar estoque, ver produtos |
-| ADMIN | Tudo do operador + produtos, categorias, imagens, clientes, frete manual, configurações, auditoria |
-| OWNER | Tudo do admin + equipe (criar contas, mudar papéis, desativar, redefinir senha) e anonimização de clientes |
-
-Cada pessoa tem sua conta. O sistema impede remover o último proprietário ativo. O cadastro público do Auth fica desligado; contas são criadas pelo proprietário.
+Funções: nada é executável por padrão; cada uma é liberada explicitamente. Tabelas novas nascem sem acesso para `anon` e `authenticated`.
 
 ## Segredos
 
 | Segredo | Onde fica |
 |---|---|
-| Chave publicável do Supabase | Variável `VITE_SUPABASE_PUBLISHABLE_KEY` (pública por natureza; protegida por RLS) |
-| Chave secreta / service role | Somente no ambiente das Edge Functions (injetada pelo Supabase) |
-| `GOOGLE_MAPS_API_KEY` | `supabase secrets set` (restrinja a chave à Routes API e defina cota diária no Google Cloud) |
-| `RATE_LIMIT_SALT` | `supabase secrets set` |
-| Token de acesso e senha do banco para deploy | Secrets do GitHub (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`) no environment `production` |
+| Chave publicável do Supabase | `VITE_SUPABASE_PUBLISHABLE_KEY` (pública por natureza, protegida por RLS) |
+| Chave secreta do Supabase | Só no ambiente das Edge Functions (injetada pelo Supabase) |
+| Chaves do EmailJS | Supabase > Edge Functions > Secrets |
+| `RATE_LIMIT_SALT` | idem |
+| Token de acesso e senha do banco (deploy) | Secrets do environment `production` no GitHub |
 
 ## LGPD
 
-- **Minimização:** nome, telefone, e-mail opcional e endereço só para entrega. Sem cadastro de cliente, sem senha, sem data de nascimento ou CPF.
-- **Base legal:** execução do contrato de compra e obrigações legais; legítimo interesse para segurança (IP apenas como hash com sal).
-- **Transparência:** página `/privacidade` com controlador, finalidades, compartilhamentos (Supabase, Google, ViaCEP, WhatsApp), retenção, direitos e canal de contato configurável.
-- **Cookies:** apenas armazenamento essencial (carrinho, rascunho do checkout, preferências). GA4, GTM e Meta Pixel só carregam após consentimento explícito e só se configurados.
-- **Direitos do titular:** o proprietário pode **anonimizar** um cliente no painel (Clientes). Nome, telefone, e-mail e endereços são removidos; pedidos e valores ficam para fins contábeis.
-- **Logs:** as Edge Functions registram código do pedido, status, valores e cidade, nunca nome, telefone ou endereço.
-- **Dados públicos:** a página do pedido mostra só o primeiro nome e o endereço com número mascarado; o endereço da produção nunca é exibido publicamente (o de retirada aparece apenas para quem fez pedido de retirada).
+- **Minimização:** nome, WhatsApp, e-mail opcional e endereço só para entrega. Sem cadastro de cliente, CPF ou senha.
+- **Transparência:** página `/privacidade` com finalidades, compartilhamentos (Supabase, EmailJS, WhatsApp) e canal de contato (WhatsApp da loja).
+- **Sem rastreamento:** não há analytics nem cookies de publicidade; o navegador guarda só o carrinho e o rascunho do checkout.
+- **Logs:** as funções registram código do pedido, valores e status, nunca nome, telefone ou endereço.
+- **Pedidos de exclusão:** atender pelo WhatsApp; os pedidos ficam guardados pelo prazo fiscal.
 
-## Checklist de revisão antes de publicar
+## Checklist antes de publicar
 
-- [ ] `npm run test:db` verde (inclui "todas as tabelas com RLS").
-- [ ] Nenhum segredo no repositório (`git grep -n "sb_secret_\|service_role\|AIza"` sem resultados).
-- [ ] `ALLOWED_ORIGINS` contém apenas os domínios da loja.
-- [ ] Chave do Google restrita à Routes API, com cota e alerta de orçamento.
-- [ ] Auth: provedor Email **ligado** (é o login da equipe) com "Allow new users to sign up" **desligado**, senha mínima de 10 caracteres, URL do site e redirecionamentos com o domínio da loja. O teste `security.test.ts` confirma que o cadastro público é recusado.
-- [ ] Environment `production` do GitHub com revisores obrigatórios.
+- [ ] `npm run test:db` verde.
+- [ ] Nenhum segredo no repositório (`git grep -n "sb_secret_\|service_role\|accessToken"` sem valores reais).
+- [ ] `ALLOWED_ORIGINS` só com a origem da loja.
+- [ ] Auth: provedor Email **ligado** com "Allow new users to sign up" **desligado**, senha mínima de 10 caracteres, URLs com o endereço da loja.
+- [ ] EmailJS: "Use Private Key" marcado.
+- [ ] Environment `production` do GitHub com revisor obrigatório.
