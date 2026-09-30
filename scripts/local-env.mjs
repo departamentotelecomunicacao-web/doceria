@@ -1,7 +1,7 @@
 // Gera os arquivos de ambiente para desenvolvimento local a partir do
 // `supabase status` (as chaves locais nunca são versionadas).
 //   node scripts/local-env.mjs          -> .env.local + supabase/functions/.env
-//   node scripts/local-env.mjs --stub   -> idem, com a API de rotas apontando para o stub de testes
+//   node scripts/local-env.mjs --stub   -> idem, com o e-mail apontando para o stub de testes
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -23,19 +23,22 @@ writeFileSync(
 );
 
 const functionsEnv = "supabase/functions/.env";
-if (!existsSync(functionsEnv) || useStub) {
+const write = !existsSync(functionsEnv) || useStub;
+if (write) {
   let content = readFileSync("supabase/functions/.env.example", "utf8");
-  content = content.replace(/^RATE_LIMIT_SALT=.*$/m, "RATE_LIMIT_SALT=local-dev-salt");
+  content = content
+    .replace(/^RATE_LIMIT_SALT=.*$/m, "RATE_LIMIT_SALT=local-dev-salt")
+    .replace(/^SITE_URL=.*$/m, `SITE_URL=${site}`);
   if (useStub) {
     content = content
-      .replace(/^GOOGLE_MAPS_API_KEY=.*$/m, "GOOGLE_MAPS_API_KEY=test-google-key")
-      .replace(/^# GOOGLE_ROUTES_ENDPOINT=.*$/m, "GOOGLE_ROUTES_ENDPOINT=http://host.docker.internal:54400/directions/v2:computeRoutes")
-      .replace(/^ROUTING_TIMEOUT_MS=.*$/m, "ROUTING_TIMEOUT_MS=4000")
-      .replace(/^QUOTE_RATE_LIMIT_PER_10_MIN=.*$/m, "QUOTE_RATE_LIMIT_PER_10_MIN=1000")
-      .replace(/^ORDER_RATE_LIMIT_PER_10_MIN=.*$/m, "ORDER_RATE_LIMIT_PER_10_MIN=1000")
-      .replace(/^ROUTING_MAX_CALLS_PER_HOUR=.*$/m, "ROUTING_MAX_CALLS_PER_HOUR=100000");
+      .replace(/^EMAILJS_SERVICE_ID=.*$/m, "EMAILJS_SERVICE_ID=service_teste")
+      .replace(/^EMAILJS_TEMPLATE_ID=.*$/m, "EMAILJS_TEMPLATE_ID=template_teste")
+      .replace(/^EMAILJS_PUBLIC_KEY=.*$/m, "EMAILJS_PUBLIC_KEY=public_teste")
+      .replace(/^EMAILJS_PRIVATE_KEY=.*$/m, "EMAILJS_PRIVATE_KEY=private_teste")
+      .replace(/^# EMAILJS_ENDPOINT=.*$/m, "EMAILJS_ENDPOINT=http://host.docker.internal:54401/api/v1.0/email/send")
+      .replace(/^ORDER_RATE_LIMIT_PER_10_MIN=.*$/m, "ORDER_RATE_LIMIT_PER_10_MIN=1000");
   }
   writeFileSync(functionsEnv, content);
 }
 
-console.log(`Gerado .env.local${!existsSync(functionsEnv) || useStub ? " e supabase/functions/.env" : ""}${useStub ? " (stub de rotas)" : ""}.`);
+console.log(`Gerado .env.local${write ? " e supabase/functions/.env" : ""}${useStub ? " (stub de e-mail)" : ""}.`);

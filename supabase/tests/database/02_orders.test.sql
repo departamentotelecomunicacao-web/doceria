@@ -1,251 +1,161 @@
 begin;
 \ir _setup.psql
-select plan(34);
+select plan(27);
 
--- Endereço de entrega e cotação válida (2,5 km)
-create temporary table t_addr as
-select '{"cep":"29300-000","street":"Rua Teste","number":"42","neighborhood":"Centro","city":"Cachoeiro de Itapemirim","state":"es"}'::jsonb as addr;
-
-insert into public.delivery_quotes (id, origin_hash, destination_hash, provider, status, distance_meters, duration_seconds, expires_at)
-select '55555555-5555-4555-8555-000000000001',
-       public.get_routing_origin() ->> 'hash',
-       public.normalize_delivery_address(addr) ->> 'destinationHash',
-       'test', 'OK', 2500, 600, now() + interval '1 hour'
-from t_addr;
-
--- Cotação expirada
-insert into public.delivery_quotes (id, origin_hash, destination_hash, provider, status, distance_meters, duration_seconds, expires_at)
-select '55555555-5555-4555-8555-000000000002',
-       public.get_routing_origin() ->> 'hash',
-       public.normalize_delivery_address(addr) ->> 'destinationHash',
-       'test', 'OK', 2500, 600, now() - interval '1 minute'
-from t_addr;
-
--- Cotação fora da área (15 km)
-insert into public.delivery_quotes (id, origin_hash, destination_hash, provider, status, distance_meters, duration_seconds, expires_at)
-select '55555555-5555-4555-8555-000000000003',
-       public.get_routing_origin() ->> 'hash',
-       public.normalize_delivery_address(addr) ->> 'destinationHash',
-       'test', 'OK', 15000, 1500, now() + interval '1 hour'
-from t_addr;
-
-grant select on t_addr to service_role;
 set local role service_role;
 
 -- ---------------------------------------------------------------------------
--- Preço sempre recalculado no servidor
+-- Cálculo no servidor
 -- ---------------------------------------------------------------------------
 select is(
-  (public.create_order(
-    tests.order_payload('ord-key-0000000000001',
-      jsonb_build_array(
-        tests.item('22222222-2222-4222-8222-000000000001', 2) || '{"priceCents": 1, "unitPriceCents": 1}',
-        tests.item('22222222-2222-4222-8222-000000000004', 1)),
-      3900) || '{"subtotalCents": 1, "totalCents": 1, "deliveryFeeCents": 0}'
-  ) ->> 'totalCents')::int,
-  3900,
-  'total calculado pelo servidor ignora valores monetários enviados pelo navegador'
-);
+  (public.create_order(tests.order_payload('pgtap-order-pickup-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400)) ->> 'totalCents')::int,
+  2400, 'retirada: 2 x R$ 12,00, sem frete');
 
-select results_eq(
-  $$select product_name_snapshot, unit_price_cents_snapshot, quantity, line_total_cents
-    from public.order_items oi join public.orders o on o.id = oi.order_id
-    where o.idempotency_key = 'ord-key-0000000000001' order by product_name_snapshot$$,
-  $$values ('Cookie Clássico', 1200, 2, 2400), ('Recheado de Nutella', 1500, 1, 1500)$$,
-  'itens guardam snapshot de nome e preço'
-);
+select is(
+  (public.create_order(tests.order_payload('pgtap-order-deliv-0001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000003', 2)), 3500,
+    'PIX', 'DELIVERY', tests.address())) ->> 'deliveryFeeCents')::int,
+  500, 'entrega: frete fixo da configuração (R$ 5,00)');
+
+select is(tests.stock('22222222-2222-4222-8222-000000000003'), 10, 'estoque controlado baixa com o pedido (12 -> 10)');
+select is(tests.stock('22222222-2222-4222-8222-000000000001'), null, 'produto sem controle continua sem controle');
+
+select is(
+  (select count(*)::int from public.order_events e join public.orders o on o.id = e.order_id
+    where o.idempotency_key = 'pgtap-order-deliv-0001' and e.kind = 'CREATED'),
+  1, 'linha do tempo registra a criação');
+
+select is(
+  (public.create_order(tests.order_payload('pgtap-order-fakeprice1',
+    jsonb_build_array(jsonb_build_object('productId', '22222222-2222-4222-8222-000000000001', 'quantity', 1, 'priceCents', 1)),
+    1200)) ->> 'totalCents')::int,
+  1200, 'preço enviado junto com o item é ignorado');
 
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000002',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 1), null)$$,
-  'PT409', 'PRICE_CHANGED', 'total esperado diferente do real gera PRICE_CHANGED'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-price-0001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 100))$$,
+  'PT409', 'PRICE_CHANGED', 'total diferente do calculado é recusado');
+
+select throws_ok(
+  $$select public.create_order(tests.order_payload('pgtap-order-noaddr-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1700, 'CASH', 'DELIVERY'))$$,
+  'PT400', 'INVALID_ADDRESS', 'entrega sem endereço é recusada');
 
 -- ---------------------------------------------------------------------------
--- Validações de quantidade e produto
+-- Estoque e disponibilidade
 -- ---------------------------------------------------------------------------
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000003',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', -2)), -2400), null)$$,
-  'PT400', 'INVALID_QUANTITY', 'quantidade negativa é rejeitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-nostock-01',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000005', 1)), 1800))$$,
+  'PT409', 'OUT_OF_STOCK', 'produto com estoque 0 não é vendido');
+
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000004',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 0)), 0), null)$$,
-  'PT400', 'INVALID_QUANTITY', 'quantidade zero é rejeitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-toomany-01',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000004', 9)), 13500))$$,
+  'PT409', 'OUT_OF_STOCK', 'quantidade acima do estoque é recusada');
+
+reset role;
+update public.products set is_active = false where id = '22222222-2222-4222-8222-000000000002';
+set local role service_role;
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000005',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 100000)), 1), null)$$,
-  'PT400', 'INVALID_QUANTITY', 'quantidade absurda é rejeitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-inactive1',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000002', 1)), 1300))$$,
+  'PT409', 'PRODUCT_UNAVAILABLE', 'produto indisponível é recusado');
+
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000006',
-      jsonb_build_array(
-        tests.item('22222222-2222-4222-8222-000000000001', 5),
-        tests.item('22222222-2222-4222-8222-000000000001', -4)), 1200), null)$$,
-  'PT400', 'INVALID_QUANTITY', 'linhas negativas não compensam linhas positivas'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-qty0-0001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 0)), 0))$$,
+  'PT400', 'INVALID_QUANTITY', 'quantidade zero é recusada');
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000007',
-      '[{"productId":"22222222-2222-4222-8222-000000000001","quantity":1.5}]'::jsonb, 1800), null)$$,
-  'PT400', 'INVALID_PAYLOAD', 'quantidade fracionada é rejeitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-qty100-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 100)), 120000))$$,
+  'PT400', 'INVALID_QUANTITY', 'quantidade acima de 99 é recusada');
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000008',
-      jsonb_build_array(tests.item('99999999-9999-4999-8999-999999999999', 1)), 1000), null)$$,
-  'PT409', 'PRODUCT_UNAVAILABLE', 'produto inexistente é rejeitado'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-qtyfrac-01',
+    jsonb_build_array(jsonb_build_object('productId', '22222222-2222-4222-8222-000000000001', 'quantity', 1.5)), 1800))$$,
+  'PT400', 'INVALID_QUANTITY', 'quantidade fracionada é recusada');
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000009',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000007', 1)), 1500), null)$$,
-  'PT409', 'OUT_OF_STOCK', 'produto esgotado bloqueia a compra'
-);
-select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000010',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000006', 5)), 9000), null)$$,
-  'PT409', 'OUT_OF_STOCK', 'quantidade acima do estoque é rejeitada'
-);
-select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000011', '[]'::jsonb, 0), null)$$,
-  'PT400', 'EMPTY_CART', 'carrinho vazio é rejeitado'
-);
-select throws_ok(
-  $$select public.create_order(tests.order_payload('short',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400), null)$$,
-  'PT400', 'INVALID_IDEMPOTENCY_KEY', 'chave de idempotência obrigatória'
-);
-select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000012',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200), null)$$,
-  'PT409', 'BELOW_MINIMUM_ORDER', 'pedido abaixo do mínimo é rejeitado'
-);
-select throws_ok(
-  $$select public.create_order(
-      jsonb_set(tests.order_payload('ord-key-0000000000013',
-        jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400),
-        '{customer,phone}', '"123"'), null)$$,
-  'PT400', 'INVALID_CUSTOMER', 'telefone inválido é rejeitado'
-);
-select throws_ok(
-  $$select public.create_order(
-      jsonb_set(tests.order_payload('ord-key-0000000000014',
-        jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400),
-        '{fulfillment,scheduledFor}', '"2020-01-01T12:00:00Z"'), null)$$,
-  'PT409', 'SLOT_UNAVAILABLE', 'horário fora das janelas é rejeitado'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-empty-001', '[]'::jsonb, 0))$$,
+  'PT400', 'EMPTY_CART', 'carrinho vazio é recusado');
 
 -- ---------------------------------------------------------------------------
 -- Idempotência
 -- ---------------------------------------------------------------------------
 select is(
-  (public.create_order(tests.order_payload('ord-key-0000000000001',
-      jsonb_build_array(
-        tests.item('22222222-2222-4222-8222-000000000001', 2),
-        tests.item('22222222-2222-4222-8222-000000000004', 1)),
-      3900), null) ->> 'replayed')::boolean,
-  true,
-  'reenvio com a mesma chave devolve o mesmo pedido'
-);
+  (public.create_order(tests.order_payload('pgtap-order-pickup-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400)) ->> 'replayed')::boolean,
+  true, 'mesma chave e mesmos dados devolvem o mesmo pedido');
 select is(
-  (select count(*)::int from public.orders where idempotency_key = 'ord-key-0000000000001'),
-  1,
-  'reenvio não cria pedido duplicado'
-);
-select is(
-  (select reserved_delta from tests.stock_delta('22222222-2222-4222-8222-000000000001')),
-  2,
-  'reenvio não reserva estoque duas vezes'
-);
+  (select count(*)::int from public.orders where idempotency_key = 'pgtap-order-pickup-001'),
+  1, 'reenvio não duplica o pedido');
 select throws_ok(
-  $$select public.create_order(tests.order_payload('ord-key-0000000000001',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 5)), 6000), null)$$,
-  'PT409', 'IDEMPOTENCY_CONFLICT', 'mesma chave com dados diferentes é rejeitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-pickup-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 3)), 3600))$$,
+  'PT409', 'IDEMPOTENCY_CONFLICT', 'mesma chave com outros dados é recusada');
 
 -- ---------------------------------------------------------------------------
--- Reserva
+-- Cliente, pagamento e agenda
 -- ---------------------------------------------------------------------------
-select results_eq(
-  $$select * from tests.stock_delta('22222222-2222-4222-8222-000000000001')$$,
-  $$values (-2, 2)$$,
-  'reserva move unidades de disponível para reservado'
-);
-select is(
-  (select count(*)::int from public.inventory_reservations r join public.orders o on o.id = r.order_id
-    where o.idempotency_key = 'ord-key-0000000000001' and r.status = 'ACTIVE'),
-  2,
-  'reservas ativas criadas para cada produto'
-);
-select is(
-  (select status::text from public.orders where idempotency_key = 'ord-key-0000000000001'),
-  'NEW',
-  'pedido em dinheiro nasce como NEW'
-);
-select is(
-  (public.create_order(tests.order_payload('ord-key-0000000000015',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000004', 2)), 3000, 'PIX'), null) ->> 'status'),
-  'AWAITING_PAYMENT',
-  'pedido PIX nasce aguardando pagamento'
-);
-
--- ---------------------------------------------------------------------------
--- Entrega
--- ---------------------------------------------------------------------------
-select is(
-  (public.create_order(
-    tests.order_payload('ord-key-0000000000016',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2900, 'CASH', 'DELIVERY',
-      (select addr from t_addr)),
-    '55555555-5555-4555-8555-000000000001') ->> 'deliveryFeeCents')::int,
-  500,
-  'frete de 2,5 km calculado pela faixa 0-3 km (R$ 5,00)'
-);
 select throws_ok(
-  $$select public.create_order(
-    tests.order_payload('ord-key-0000000000017',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2900, 'CASH', 'DELIVERY',
-      (select addr from t_addr)), null)$$,
-  'PT409', 'DELIVERY_QUOTE_INVALID', 'entrega sem cotação do servidor é rejeitada'
-);
+  $$select public.create_order(jsonb_set(tests.order_payload('pgtap-order-phone-001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200), '{customer,phone}', '"123"'))$$,
+  'PT400', 'INVALID_CUSTOMER', 'WhatsApp inválido é recusado');
 select throws_ok(
-  $$select public.create_order(
-    tests.order_payload('ord-key-0000000000018',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2900, 'CASH', 'DELIVERY',
-      (select addr from t_addr)), '55555555-5555-4555-8555-000000000002')$$,
-  'PT409', 'DELIVERY_QUOTE_INVALID', 'cotação expirada é rejeitada'
-);
+  $$select public.create_order(jsonb_set(tests.order_payload('pgtap-order-change-01',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200), '{cashChangeForCents}', '500'))$$,
+  'PT400', 'INVALID_CASH_CHANGE', 'troco menor que o total é recusado');
 select throws_ok(
-  $$select public.create_order(
-    tests.order_payload('ord-key-0000000000019',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2900, 'CASH', 'DELIVERY',
-      '{"cep":"29300000","street":"Outra Rua","number":"1","neighborhood":"Centro","city":"Cachoeiro de Itapemirim","state":"ES"}'::jsonb),
-    '55555555-5555-4555-8555-000000000001')$$,
-  'PT409', 'DELIVERY_QUOTE_INVALID', 'cotação de outro endereço não pode ser reaproveitada'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-past-0001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200,
+    'CASH', 'PICKUP', null, public.store_today() - 1))$$,
+  'PT409', 'DATE_UNAVAILABLE', 'data no passado é recusada');
 select throws_ok(
-  $$select public.create_order(
-    tests.order_payload('ord-key-0000000000020',
-      jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 2)), 2400, 'CASH', 'DELIVERY',
-      (select addr from t_addr)), '55555555-5555-4555-8555-000000000003')$$,
-  'PT409', 'DELIVERY_UNAVAILABLE', 'endereço fora da área não gera pedido de entrega'
-);
+  $$select public.create_order(tests.order_payload('pgtap-order-far-00001',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200,
+    'CASH', 'PICKUP', null, public.store_today() + 60))$$,
+  'PT409', 'DATE_UNAVAILABLE', 'data além do limite é recusada');
+select throws_ok(
+  $$select public.create_order(jsonb_set(tests.order_payload('pgtap-order-evening1',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200), '{fulfillment,period}', '"EVENING"'))$$,
+  'PT409', 'DATE_UNAVAILABLE', 'período não oferecido é recusado');
 
 reset role;
+update public.store_settings
+   set open_weekdays = array[((extract(dow from public.store_today())::int + 1) % 7)::smallint]
+ where id;
+set local role service_role;
+select throws_ok(
+  $$select public.create_order(tests.order_payload('pgtap-order-closed-01',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200))$$,
+  'PT409', 'DATE_UNAVAILABLE', 'dia sem funcionamento é recusado');
 
-select is(
-  (public.compute_delivery_fee(3000, 1000) ->> 'feeCents')::int, 500, '3,0 km exatos ainda na faixa até 3 km');
-select is(
-  (public.compute_delivery_fee(3001, 1000) ->> 'feeCents')::int, 700, 'acima de 3 km vai para a próxima faixa');
-select is(
-  (public.compute_delivery_fee(4000, 20000) ->> 'feeCents')::int, 0, 'frete grátis acima do subtotal configurado');
-select is(
-  (public.compute_delivery_fee(12001, 1000) ->> 'reason'), 'OUT_OF_AREA', 'acima da distância máxima fica fora da área');
+-- ---------------------------------------------------------------------------
+-- Loja pausada, entrega desligada e pedido mínimo
+-- ---------------------------------------------------------------------------
+reset role;
+update public.store_settings set open_weekdays = '{0,1,2,3,4,5,6}', accepting_orders = false where id;
+set local role service_role;
+select throws_ok(
+  $$select public.create_order(tests.order_payload('pgtap-order-paused-01',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200))$$,
+  'PT409', 'STORE_PAUSED', 'loja pausada não recebe pedidos');
 
-update public.store_settings set delivery_pricing_mode = 'BASE_PLUS_PER_KM', delivery_base_fee_cents = 400, delivery_per_km_cents = 120;
-select is(
-  (public.compute_delivery_fee(4200, 1000) ->> 'feeCents')::int, 950,
-  'modo base + km: 4,00 + 4,2 x 1,20 = 9,04 arredondado para 9,50');
+reset role;
+update public.store_settings set accepting_orders = true, delivery_enabled = false where id;
+set local role service_role;
+select throws_ok(
+  $$select public.create_order(tests.order_payload('pgtap-order-nodeliv-1',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1700, 'CASH', 'DELIVERY', tests.address()))$$,
+  'PT409', 'DELIVERY_UNAVAILABLE', 'entrega desligada é recusada');
+
+reset role;
+update public.store_settings set delivery_enabled = true, min_order_cents = 5000 where id;
+set local role service_role;
+select throws_ok(
+  $$select public.create_order(tests.order_payload('pgtap-order-minimum-1',
+    jsonb_build_array(tests.item('22222222-2222-4222-8222-000000000001', 1)), 1200))$$,
+  'PT409', 'BELOW_MINIMUM_ORDER', 'pedido abaixo do mínimo é recusado');
 
 select * from finish();
 rollback;

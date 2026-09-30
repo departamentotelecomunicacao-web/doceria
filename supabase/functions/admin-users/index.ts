@@ -1,8 +1,8 @@
 // POST /functions/v1/admin-users
-// Gestão da equipe (somente OWNER): listar, criar conta individual, alterar
-// papel/ativação e redefinir senha. Cada pessoa tem sua própria conta; não há
-// conta compartilhada. Toda mudança é auditada com o autor.
+// Gestão da equipe (somente o dono/a dona): listar, criar conta individual,
+// alterar papel/ativação e redefinir senha. Cada pessoa tem sua própria conta.
 
+import { type AppRole, requireStaff, type StaffProfile } from "../_shared/auth.ts";
 import { AuthApiError, Db, dbConfigFromEnv } from "../_shared/db.ts";
 import { AppError } from "../_shared/errors.ts";
 import { createHandler, jsonResponse, readJsonBody } from "../_shared/http.ts";
@@ -10,20 +10,13 @@ import { createHandler, jsonResponse, readJsonBody } from "../_shared/http.ts";
 const getEnv = (name: string) => Deno.env.get(name);
 const db = new Db(dbConfigFromEnv(getEnv));
 
-const ROLES = ["OWNER", "ADMIN", "OPERATOR"] as const;
-type Role = typeof ROLES[number];
+const ROLES: readonly AppRole[] = ["OWNER", "STAFF"];
+type Role = AppRole;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BAN_FOREVER = "876000h";
 
-interface Profile {
-  id: string;
-  full_name: string;
-  email: string | null;
-  role: Role;
-  is_active: boolean;
-  created_at: string;
-}
+type Profile = StaffProfile;
 
 function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value);
@@ -37,33 +30,6 @@ function validatePassword(password: unknown): string {
   return password;
 }
 
-async function requireOwner(req: Request): Promise<Profile> {
-  const auth = req.headers.get("authorization") ?? "";
-  const jwt = auth.replace(/^Bearer\s+/i, "");
-  if (!jwt || !jwt.includes(".")) {
-    throw new AppError(401, "AUTH_REQUIRED", "Sua sessão expirou. Entre novamente.");
-  }
-  const user = await db.getUserFromJwt(jwt);
-  if (!user) throw new AppError(401, "AUTH_REQUIRED", "Sua sessão expirou. Entre novamente.");
-
-  const rows = await db.select<Profile>("profiles", `select=*&id=eq.${user.id}&is_active=eq.true`);
-  if (rows.length === 0 || rows[0].role !== "OWNER") {
-    throw new AppError(403, "FORBIDDEN", "Somente proprietários podem gerenciar a equipe.");
-  }
-  return rows[0];
-}
-
-async function audit(actorId: string, action: string, entityId: string, summary: string, changes?: unknown) {
-  await db.insert("audit_logs", {
-    actor_id: actorId,
-    action,
-    entity_type: "profiles",
-    entity_id: entityId,
-    summary,
-    changes: changes ?? null,
-  });
-}
-
 async function activeOwnerCount(excludingId: string): Promise<number> {
   const rows = await db.select<{ id: string }>(
     "profiles",
@@ -73,7 +39,7 @@ async function activeOwnerCount(excludingId: string): Promise<number> {
 }
 
 Deno.serve(createHandler(getEnv, "admin-users", async (req, cors) => {
-  const actor = await requireOwner(req);
+  const actor = await requireStaff(db, req, "OWNER");
   const body = (await readJsonBody(req, 4096)) as Record<string, unknown>;
   const action = body?.action;
 
@@ -119,7 +85,6 @@ Deno.serve(createHandler(getEnv, "admin-users", async (req, cors) => {
     }
 
     await db.insert("profiles", { id: created.id, full_name: fullName, email, role: body.role, is_active: true });
-    await audit(actor.id, "team.member_created", created.id, `Conta criada para ${fullName} (${body.role})`);
     return jsonResponse({ id: created.id }, 201, cors);
   }
 
@@ -150,14 +115,13 @@ Deno.serve(createHandler(getEnv, "admin-users", async (req, cors) => {
     const losesOwner = target.role === "OWNER" && target.is_active &&
       ((patch.role !== undefined && patch.role !== "OWNER") || patch.is_active === false);
     if (losesOwner && (await activeOwnerCount(target.id)) === 0) {
-      throw new AppError(409, "LAST_OWNER", "É preciso manter ao menos um proprietário ativo.");
+      throw new AppError(409, "LAST_OWNER", "É preciso manter ao menos um dono ou dona ativo.");
     }
 
     await db.update("profiles", `id=eq.${target.id}`, patch);
     if (patch.is_active !== undefined) {
       await db.adminUpdateUser(target.id, { ban_duration: patch.is_active ? "none" : BAN_FOREVER });
     }
-    await audit(actor.id, "team.member_updated", target.id, `Conta de ${target.full_name || target.email} alterada`, patch);
     return jsonResponse({ id: target.id }, 200, cors);
   }
 
@@ -168,7 +132,6 @@ Deno.serve(createHandler(getEnv, "admin-users", async (req, cors) => {
     const rows = await db.select<Profile>("profiles", `select=id,full_name,email&id=eq.${userId}`);
     if (rows.length === 0) throw new AppError(404, "USER_NOT_FOUND", "Usuário não encontrado.");
     await db.adminUpdateUser(userId, { password });
-    await audit(actor.id, "team.password_reset", userId, `Senha redefinida para ${rows[0].full_name || rows[0].email}`);
     return jsonResponse({ id: userId }, 200, cors);
   }
 

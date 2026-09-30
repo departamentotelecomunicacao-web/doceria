@@ -18,7 +18,7 @@
     "test:db": "supabase test db",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
-    "stub:routes": "node tests/stubs/google-routes-stub.mjs",
+    "stub:email": "node tests/stubs/email-stub.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "env:local": "node scripts/local-env.mjs",
     "env:test": "node scripts/local-env.mjs --stub",

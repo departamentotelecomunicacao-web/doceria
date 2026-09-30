@@ -1,20 +1,18 @@
 // Validação compartilhada entre o checkout (navegador) e as Edge Functions.
 // Módulo sem dependências: roda em Deno, Node (Vitest) e no navegador.
-// O banco revalida tudo novamente; aqui o objetivo é rejeitar cedo entradas
-// malformadas e qualquer campo que o cliente não deveria enviar.
+// O banco revalida tudo; aqui o objetivo é recusar cedo entradas malformadas e
+// qualquer campo que o cliente não deveria enviar (preço, frete, estoque).
 
 export type FulfillmentType = "PICKUP" | "DELIVERY";
 export type PaymentMethod = "PIX" | "CASH" | "CARD";
+export type DayPeriod = "MORNING" | "AFTERNOON" | "EVENING";
 
 export interface AddressInput {
-  cep: string;
   street: string;
   number: string;
-  complement?: string | null;
-  neighborhood: string;
-  city: string;
-  state: string;
-  reference?: string | null;
+  district: string;
+  complement: string | null;
+  reference: string | null;
 }
 
 export interface OrderItemInput {
@@ -25,7 +23,7 @@ export interface OrderItemInput {
 export interface OrderRequest {
   idempotencyKey: string;
   customer: { name: string; phone: string; email: string | null };
-  fulfillment: { type: FulfillmentType; scheduledFor: string; address?: AddressInput };
+  fulfillment: { type: FulfillmentType; date: string; period: DayPeriod; address?: AddressInput };
   items: OrderItemInput[];
   paymentMethod: PaymentMethod;
   cashChangeForCents: number | null;
@@ -40,8 +38,8 @@ export type ValidationResult<T> =
   | { ok: false; errors: FieldErrors };
 
 export const LIMITS = {
-  maxOrderLines: 30,
-  maxQuantity: 500,
+  maxOrderLines: 40,
+  maxQuantity: 99,
   maxNotes: 500,
   maxCents: 10_000_000,
 } as const;
@@ -49,10 +47,8 @@ export const LIMITS = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDEMPOTENCY_RE = /^[A-Za-z0-9_-]{16,100}$/;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const UF = new Set([
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA",
-  "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
-]);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PERIODS: readonly DayPeriod[] = ["MORNING", "AFTERNOON", "EVENING"];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -77,6 +73,10 @@ function isSafeInteger(value: unknown): value is number {
 
 export function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
+}
+
+export function isEmail(value: string): boolean {
+  return value.length <= 254 && EMAIL_RE.test(value);
 }
 
 /**
@@ -110,15 +110,7 @@ export function formatBrazilPhone(e164: string | null | undefined): string {
   return e164;
 }
 
-export function normalizeCep(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const digits = raw.replace(/\D/g, "");
-  return /^[0-9]{8}$/.test(digits) ? digits : null;
-}
-
-const ADDRESS_KEYS = [
-  "cep", "street", "number", "complement", "neighborhood", "city", "state", "reference",
-] as const;
+const ADDRESS_KEYS = ["street", "number", "district", "complement", "reference"] as const;
 
 export function validateAddress(input: unknown, prefix = "address"): ValidationResult<AddressInput> {
   const errors: FieldErrors = {};
@@ -128,35 +120,20 @@ export function validateAddress(input: unknown, prefix = "address"): ValidationR
   for (const key of unexpectedKeys(input, ADDRESS_KEYS)) {
     errors[`${prefix}.${key}`] = "Campo não permitido.";
   }
-
-  const cep = normalizeCep(input.cep);
   const street = cleanText(input.street);
   const number = cleanText(input.number);
+  const district = cleanText(input.district);
   const complement = optionalText(input.complement);
-  const neighborhood = cleanText(input.neighborhood);
-  const city = cleanText(input.city);
-  const state = cleanText(input.state).toUpperCase();
   const reference = optionalText(input.reference);
 
-  if (!cep) errors[`${prefix}.cep`] = "CEP inválido.";
   if (street.length < 2 || street.length > 120) errors[`${prefix}.street`] = "Informe a rua.";
   if (number.length < 1 || number.length > 12) errors[`${prefix}.number`] = "Informe o número (ou S/N).";
+  if (district.length < 2 || district.length > 80) errors[`${prefix}.district`] = "Informe o bairro.";
   if (complement && complement.length > 80) errors[`${prefix}.complement`] = "Complemento muito longo.";
-  if (neighborhood.length < 2 || neighborhood.length > 80) errors[`${prefix}.neighborhood`] = "Informe o bairro.";
-  if (city.length < 2 || city.length > 80) errors[`${prefix}.city`] = "Informe a cidade.";
-  if (!UF.has(state)) errors[`${prefix}.state`] = "Estado inválido.";
   if (reference && reference.length > 160) errors[`${prefix}.reference`] = "Referência muito longa.";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return {
-    ok: true,
-    value: { cep: cep!, street, number, complement, neighborhood, city, state, reference },
-  };
-}
-
-/** Endereço completo o suficiente para pedir cotação (evita chamadas à API de mapas). */
-export function isAddressReadyForQuote(input: Partial<AddressInput>): boolean {
-  return validateAddress(input).ok;
+  return { ok: true, value: { street, number, district, complement, reference } };
 }
 
 const ORDER_KEYS = [
@@ -164,13 +141,12 @@ const ORDER_KEYS = [
   "cashChangeForCents", "notes", "expectedTotalCents",
 ] as const;
 const CUSTOMER_KEYS = ["name", "phone", "email"] as const;
-const FULFILLMENT_KEYS = ["type", "scheduledFor", "address"] as const;
+const FULFILLMENT_KEYS = ["type", "date", "period", "address"] as const;
 const ITEM_KEYS = ["productId", "quantity"] as const;
 
 /**
- * Valida o corpo da criação de pedido. Qualquer campo extra (ex.: priceCents,
- * totalCents, deliveryFeeCents, distanceKm, stock) é rejeitado: valores
- * monetários e de estoque só são definidos pelo servidor.
+ * Valida o corpo da criação de pedido. Campos extras (priceCents, totalCents,
+ * deliveryFeeCents, stock...) são recusados: valores só vêm do servidor.
  */
 export function parseOrderRequest(input: unknown): ValidationResult<OrderRequest> {
   const errors: FieldErrors = {};
@@ -197,13 +173,14 @@ export function parseOrderRequest(input: unknown): ValidationResult<OrderRequest
     const rawEmail = optionalText(input.customer.email);
     email = rawEmail ? rawEmail.toLowerCase() : null;
     if (name.length < 2 || name.length > 120) errors["customer.name"] = "Informe seu nome.";
-    if (!phone) errors["customer.phone"] = "Telefone inválido. Use DDD + número.";
-    if (email && (email.length > 254 || !EMAIL_RE.test(email))) errors["customer.email"] = "E-mail inválido.";
+    if (!phone) errors["customer.phone"] = "WhatsApp inválido. Use DDD + número.";
+    if (email && !isEmail(email)) errors["customer.email"] = "E-mail inválido.";
   }
 
-  // Recebimento
+  // Entrega ou retirada
   let type: FulfillmentType = "PICKUP";
-  let scheduledFor = "";
+  let date = "";
+  let period: DayPeriod = "AFTERNOON";
   let address: AddressInput | undefined;
   if (!isPlainObject(input.fulfillment)) {
     errors.fulfillment = "Escolha retirada ou entrega.";
@@ -214,9 +191,14 @@ export function parseOrderRequest(input: unknown): ValidationResult<OrderRequest
     } else {
       errors["fulfillment.type"] = "Escolha retirada ou entrega.";
     }
-    scheduledFor = typeof input.fulfillment.scheduledFor === "string" ? input.fulfillment.scheduledFor : "";
-    if (!scheduledFor || Number.isNaN(Date.parse(scheduledFor))) {
-      errors["fulfillment.scheduledFor"] = "Escolha um horário.";
+    date = typeof input.fulfillment.date === "string" ? input.fulfillment.date : "";
+    if (!DATE_RE.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) {
+      errors["fulfillment.date"] = "Escolha a data.";
+    }
+    if (PERIODS.includes(input.fulfillment.period as DayPeriod)) {
+      period = input.fulfillment.period as DayPeriod;
+    } else {
+      errors["fulfillment.period"] = "Escolha o período.";
     }
     if (type === "DELIVERY") {
       const result = validateAddress(input.fulfillment.address, "fulfillment.address");
@@ -278,7 +260,7 @@ export function parseOrderRequest(input: unknown): ValidationResult<OrderRequest
     value: {
       idempotencyKey,
       customer: { name, phone: phone!, email },
-      fulfillment: { type, scheduledFor, ...(address ? { address } : {}) },
+      fulfillment: { type, date, period, ...(address ? { address } : {}) },
       items,
       paymentMethod: paymentMethod as PaymentMethod,
       cashChangeForCents: paymentMethod === "CASH" ? cashChangeForCents : null,
@@ -286,30 +268,4 @@ export function parseOrderRequest(input: unknown): ValidationResult<OrderRequest
       expectedTotalCents: input.expectedTotalCents as number,
     },
   };
-}
-
-const QUOTE_KEYS = ["address", "subtotalCents"] as const;
-
-export interface QuoteRequest {
-  address: AddressInput;
-  subtotalCents: number;
-}
-
-export function parseQuoteRequest(input: unknown): ValidationResult<QuoteRequest> {
-  if (!isPlainObject(input)) return { ok: false, errors: { body: "Dados inválidos." } };
-  const errors: FieldErrors = {};
-  for (const key of unexpectedKeys(input, QUOTE_KEYS)) errors[key] = "Campo não permitido.";
-  const address = validateAddress(input.address);
-  if (!address.ok) Object.assign(errors, address.errors);
-  const subtotal = input.subtotalCents ?? 0;
-  if (!isSafeInteger(subtotal) || subtotal < 0 || subtotal > LIMITS.maxCents * 10) {
-    errors.subtotalCents = "Subtotal inválido.";
-  }
-  if (Object.keys(errors).length > 0 || !address.ok) return { ok: false, errors };
-  return { ok: true, value: { address: address.value, subtotalCents: subtotal as number } };
-}
-
-/** Texto do endereço enviado ao provedor de rotas. */
-export function addressToRoutingQuery(address: AddressInput): string {
-  return `${address.street}, ${address.number} - ${address.neighborhood}, ${address.city} - ${address.state}, ${address.cep.replace(/^(\d{5})(\d{3})$/, "$1-$2")}, Brasil`;
 }
