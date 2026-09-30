@@ -1,5 +1,5 @@
 // Utilitários de teste para o stack local (supabase start + functions serve +
-// stub de rotas). Nenhuma chave fica no repositório: são lidas do ambiente
+// stub de e-mail). Nenhuma chave fica no repositório: são lidas do ambiente
 // (SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY) ou, se
 // ausentes, do `supabase status` do projeto local.
 import { execSync } from "node:child_process";
@@ -22,7 +22,7 @@ const status = needsStatus ? localStatus() : {};
 export const SUPABASE_URL = process.env.SUPABASE_URL ?? status.API_URL;
 export const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? status.PUBLISHABLE_KEY;
 export const SECRET_KEY = process.env.SUPABASE_SECRET_KEY ?? status.SECRET_KEY;
-export const STUB_URL = process.env.ROUTES_STUB_URL ?? "http://127.0.0.1:54400";
+export const EMAIL_STUB_URL = process.env.EMAIL_STUB_URL ?? "http://127.0.0.1:54401";
 
 export interface HttpResult<T = unknown> {
   status: number;
@@ -83,11 +83,11 @@ export interface TestProduct {
   slug: string;
   name: string;
   price_cents: number;
-  stock_available: number;
+  stock: number | null;
 }
 
-/** Cria um produto isolado para o teste (slug único). */
-export async function createTestProduct(input: { stock: number; priceCents?: number; maxPerOrder?: number; name?: string; sortOrder?: number }): Promise<TestProduct> {
+/** Cria um produto isolado para o teste (slug único). stock null = sem controle. */
+export async function createTestProduct(input: { stock: number | null; priceCents?: number; name?: string; sortOrder?: number }): Promise<TestProduct> {
   const suffix = randomUUID().slice(0, 8);
   const result = await service<TestProduct[]>("products", {
     method: "POST",
@@ -96,9 +96,7 @@ export async function createTestProduct(input: { stock: number; priceCents?: num
       name: input.name ?? `Teste ${suffix}`,
       slug: `teste-${suffix}`,
       price_cents: input.priceCents ?? 2500,
-      stock_available: input.stock,
-      max_per_order: input.maxPerOrder ?? 24,
-      low_stock_threshold: 1,
+      stock: input.stock,
       sort_order: input.sortOrder ?? 100,
       short_description: "Produto criado por teste automatizado",
     }),
@@ -107,15 +105,16 @@ export async function createTestProduct(input: { stock: number; priceCents?: num
   return result.body[0];
 }
 
-export async function getStock(productId: string) {
-  const result = await service<{ stock_available: number; stock_reserved: number }[]>(`products?select=stock_available,stock_reserved&id=eq.${productId}`);
-  return result.body[0];
+export async function getStock(productId: string): Promise<number | null> {
+  const result = await service<{ stock: number | null }[]>(`products?select=stock&id=eq.${productId}`);
+  return result.body[0].stock;
 }
 
-export async function firstSlot(type: "PICKUP" | "DELIVERY"): Promise<string> {
-  const result = await rest<{ start: string }[]>("rpc/get_fulfillment_slots", { method: "POST", body: JSON.stringify({ p_type: type }) });
-  if (!result.body?.length) throw new Error("sem janelas disponíveis no seed");
-  return result.body[0].start;
+/** Primeira data disponível na configuração pública da loja. */
+export async function firstDate(): Promise<string> {
+  const result = await rest<{ availableDates: string[] }>("rpc/get_public_store_config", { method: "POST", body: "{}" });
+  if (!result.body?.availableDates?.length) throw new Error("sem datas disponíveis no seed");
+  return result.body.availableDates[0];
 }
 
 export function uniquePhone(): string {
@@ -127,6 +126,10 @@ export function newKey(): string {
   return randomUUID();
 }
 
+export function address(district = "Centro") {
+  return { street: "Rua dos Testes", number: String(Math.floor(Math.random() * 9000) + 100), district };
+}
+
 export async function orderPayload(input: {
   items: { productId: string; quantity: number }[];
   expectedTotalCents: number;
@@ -135,23 +138,46 @@ export async function orderPayload(input: {
   address?: Record<string, string>;
   key?: string;
   phone?: string;
+  email?: string | null;
 }) {
   const type = input.type ?? "PICKUP";
   return {
     idempotencyKey: input.key ?? newKey(),
-    customer: { name: "Cliente de Teste", phone: input.phone ?? uniquePhone(), email: null },
-    fulfillment: { type, scheduledFor: await firstSlot(type), ...(input.address ? { address: input.address } : {}) },
+    customer: { name: "Cliente de Teste", phone: input.phone ?? uniquePhone(), email: input.email ?? null },
+    fulfillment: {
+      type,
+      date: await firstDate(),
+      period: "AFTERNOON",
+      ...(type === "DELIVERY" ? { address: input.address ?? address() } : {}),
+    },
     items: input.items,
     paymentMethod: input.paymentMethod ?? "CASH",
     expectedTotalCents: input.expectedTotalCents,
   };
 }
 
-export function address(neighborhood: string, street = "Rua dos Testes", number = String(Math.floor(Math.random() * 9000) + 100)) {
-  return { cep: "29300-000", street, number, neighborhood, city: "Cachoeiro de Itapemirim", state: "ES" };
+// Stub do EmailJS ---------------------------------------------------------------
+export interface CapturedEmail {
+  to_email: string;
+  to_name: string;
+  subject: string;
+  content_html: string;
+  reply_to: string;
 }
 
-export async function stubRequests(): Promise<number> {
-  const response = await fetch(`${STUB_URL}/__stats`);
-  return ((await response.json()) as { requests: number }).requests;
+export async function sentEmails(): Promise<CapturedEmail[]> {
+  const response = await fetch(`${EMAIL_STUB_URL}/__emails`);
+  return ((await response.json()) as { emails: CapturedEmail[] }).emails;
+}
+
+export async function emailsTo(address: string): Promise<CapturedEmail[]> {
+  return (await sentEmails()).filter((email) => email.to_email === address);
+}
+
+export async function failEmails(): Promise<void> {
+  await fetch(`${EMAIL_STUB_URL}/__fail`, { method: "POST" });
+}
+
+export async function resetEmails(): Promise<void> {
+  await fetch(`${EMAIL_STUB_URL}/__reset`, { method: "POST" });
 }

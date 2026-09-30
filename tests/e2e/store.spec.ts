@@ -10,11 +10,11 @@ test.describe("loja", () => {
     await page.getByRole("link", { name: "Ver cardápio", exact: true }).click();
     await expect(page).toHaveURL(/\/produtos/);
     await expect(page.getByTestId("product-card").first()).toBeVisible();
-    expect(await page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(10);
+    expect(await page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(5);
 
-    await page.getByRole("tab", { name: /Combos/ }).click();
-    await expect(page).toHaveURL(/categoria=combos/);
-    await expect(page.getByTestId("product-card")).toHaveCount(2);
+    await page.getByRole("tab", { name: /Caixas/ }).click();
+    await expect(page).toHaveURL(/categoria=caixas/);
+    await expect(page.getByTestId("product-card")).toHaveCount(1);
   });
 
   test("cliente adiciona produto, altera quantidade e remove", async ({ page }) => {

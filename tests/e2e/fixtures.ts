@@ -1,21 +1,12 @@
 import { test as base, expect, type Page } from "@playwright/test";
-import { callFunction, createTestProduct, orderPayload, rest, signIn, type TestProduct } from "../helpers/local";
+import { callFunction, createTestProduct, emailsTo, getStock, orderPayload, rest, service, signIn, type TestProduct } from "../helpers/local";
 
 export { expect };
-export { createTestProduct, callFunction, orderPayload, rest, signIn };
+export { callFunction, createTestProduct, emailsTo, getStock, orderPayload, rest, service, signIn };
 export type { TestProduct };
-
-// ViaCEP é externo: nos testes respondemos com dados fixos (determinismo).
-const VIACEP: Record<string, unknown> = {
-  "29300500": { logradouro: "Rua Exemplo do CEP", bairro: "Gilberto Machado", localidade: "Cachoeiro de Itapemirim", uf: "ES" },
-};
 
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use) => {
-    await page.route("**://viacep.com.br/**", async (route) => {
-      const cep = route.request().url().match(/ws\/(\d{8})/)?.[1] ?? "";
-      await route.fulfill({ json: VIACEP[cep] ?? { erro: true } });
-    });
     await use(page);
   },
 });
@@ -27,40 +18,23 @@ export async function addToCartFromProductPage(page: Page, product: TestProduct,
   await page.getByRole("button", { name: "Adicionar ao carrinho" }).click();
 }
 
-export async function fillCustomer(page: Page, phone = "(28) 99911-2233") {
+export async function fillCustomer(page: Page, phone = "(28) 99911-2233", email?: string) {
   await page.getByLabel("Nome", { exact: true }).fill("Cliente E2E");
-  await page.getByLabel("WhatsApp / telefone").fill(phone);
+  await page.getByLabel("WhatsApp", { exact: true }).fill(phone);
+  if (email) await page.getByRole("textbox", { name: /E-mail/ }).fill(email);
 }
 
-export async function adminLogin(page: Page, email = "owner@doceria.local") {
+export async function adminLogin(page: Page, email = "dono@doceria.local") {
   await page.goto("/admin/login");
-  await page.getByLabel("E-mail").fill(email);
+  await page.getByRole("textbox", { name: /E-mail/ }).fill(email);
   await page.getByLabel("Senha").fill("doceria-local-123");
   await page.getByRole("button", { name: "Entrar" }).click();
-  await page.waitForURL(/\/admin\/dashboard/);
-}
-
-export async function stock(productId: string) {
-  const token = await signIn("owner@doceria.local");
-  const result = await rest<{ stock_available: number; stock_reserved: number }[]>(
-    `products?select=stock_available,stock_reserved&id=eq.${productId}`, { token },
-  );
-  return result.body[0];
+  await page.waitForURL(/\/admin\/pedidos/);
 }
 
 export async function setPrice(productId: string, priceCents: number) {
-  const token = await signIn("owner@doceria.local");
+  const token = await signIn("dono@doceria.local");
   await rest(`products?id=eq.${productId}`, { method: "PATCH", token, body: JSON.stringify({ price_cents: priceCents }) });
-}
-
-export async function adjustStock(productId: string, quantity: number) {
-  const token = await signIn("owner@doceria.local");
-  const result = await rest("rpc/inventory_adjust", {
-    method: "POST",
-    token,
-    body: JSON.stringify({ p_product_id: productId, p_type: "ADJUSTMENT", p_quantity: quantity, p_reason: "Teste E2E" }),
-  });
-  if (result.status !== 200) throw new Error(JSON.stringify(result.body));
 }
 
 export function uniqueMobile(): string {

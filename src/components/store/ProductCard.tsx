@@ -2,7 +2,7 @@ import { ArrowUpRight, Plus } from "lucide-react";
 import { Link } from "react-router";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/components/ui/cn";
-import { stockStatusOf } from "@/lib/labels";
+import { isSoldOut } from "@/lib/labels";
 import type { Category, Product } from "@/types/domain";
 import { Price } from "./Price";
 import { ProductImage } from "./ProductImage";
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function ProductCard({ product, category, onAdd, buyHref, onBuyClick, viewHref, onViewClick, compact, priority }: Props) {
-  const soldOut = stockStatusOf(product) === "SOLD_OUT";
+  const soldOut = isSoldOut(product);
   const detailHref = `/produto/${product.slug}`;
 
   const imageBlock = (
@@ -31,7 +31,6 @@ export function ProductCard({ product, category, onAdd, buyHref, onBuyClick, vie
       <ProductImage product={product} priority={priority} className={cn("transition-transform duration-500 group-hover:scale-[1.03]", soldOut && "opacity-60 grayscale-[35%]")} />
       <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
         {category?.slug === "novidades" && <Badge tone="accent">Novidade</Badge>}
-        {product.compare_at_price_cents && <Badge tone="warning">Oferta</Badge>}
         <StockBadge product={product} />
       </div>
     </div>
@@ -55,7 +54,7 @@ export function ProductCard({ product, category, onAdd, buyHref, onBuyClick, vie
         </h3>
         {product.short_description && <p className="line-clamp-2 text-sm text-cocoa-600">{product.short_description}</p>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <Price cents={product.price_cents} compareAtCents={product.compare_at_price_cents} />
+          <Price cents={product.price_cents} />
           {buyHref ? (
             soldOut ? (
               <span className="text-sm font-semibold text-cocoa-500">Esgotado</span>

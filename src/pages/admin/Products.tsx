@@ -1,22 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Pencil, Plus, Search, Star, Tags, Trash2 } from "lucide-react";
+import { Pencil, Plus, Search, Star, Tags, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-
 import { useAdminAuth } from "@/admin/auth";
-import { deleteCategory, listAdminCategories, listAdminProducts, saveCategory, saveProduct } from "@/api/admin";
+import { deleteCategory, listAdminCategories, listAdminProducts, saveCategory, setProductStock } from "@/api/admin";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { ProductImage } from "@/components/store/ProductImage";
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
 import { Checkbox, Field, Input } from "@/components/ui/Field";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/States";
 import { useToast } from "@/components/ui/Toast";
 import { friendlyMessage } from "@/lib/errors";
-import { stockStatusOf } from "@/lib/labels";
 import { formatBRL } from "@/lib/money";
-import type { Category, Product } from "@/types/domain";
 import { slugify } from "@/lib/slugify";
+import type { Category, Product } from "@/types/domain";
 
 function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
@@ -29,7 +28,6 @@ function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void
       saveCategory(category.id ?? null, {
         name: category.name?.trim() ?? "",
         slug: category.slug || slugify(category.name ?? ""),
-        description: category.description ?? "",
         sort_order: Number(category.sort_order ?? 0),
         is_active: category.is_active ?? true,
       }),
@@ -51,14 +49,14 @@ function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void
   });
 
   return (
-    <Dialog open={open} onClose={onClose} title="Categorias" description="Organizam o cardápio (ex.: Clássicos, Especiais, Combos, Novidades)." size="lg">
+    <Dialog open={open} onClose={onClose} title="Categorias" description="Organizam o cardápio (ex.: Clássicos, Especiais, Caixas)." size="lg">
       <div className="space-y-4">
         <ul className="divide-y divide-cream-200">
           {(categories.data ?? []).map((category) => (
             <li key={category.id} className="flex items-center justify-between gap-3 py-2 text-sm">
               <span>
-                <strong>{category.name}</strong> <span className="text-cocoa-500">/{category.slug} · ordem {category.sort_order}</span>
-                {!category.is_active && <Badge className="ml-2">inativa</Badge>}
+                <strong>{category.name}</strong> <span className="text-cocoa-500">· ordem {category.sort_order}</span>
+                {!category.is_active && <Badge className="ml-2">oculta</Badge>}
               </span>
               <span className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setEditing(category)} aria-label={`Editar ${category.name}`}><Pencil className="size-4" /></Button>
@@ -70,10 +68,8 @@ function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void
         {editing ? (
           <div className="grid gap-3 rounded-2xl bg-cream-100 p-4 sm:grid-cols-2">
             <Field label="Nome">{({ id }) => <Input id={id} value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value, slug: editing.id ? editing.slug : slugify(e.target.value) })} />}</Field>
-            <Field label="Endereço (slug)">{({ id }) => <Input id={id} value={editing.slug ?? ""} onChange={(e) => setEditing({ ...editing, slug: slugify(e.target.value) })} />}</Field>
-            <Field label="Descrição" optional className="sm:col-span-2">{({ id }) => <Input id={id} value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} maxLength={300} />}</Field>
             <Field label="Ordem">{({ id }) => <Input id={id} type="number" value={editing.sort_order ?? 0} onChange={(e) => setEditing({ ...editing, sort_order: Number(e.target.value) })} />}</Field>
-            <div className="flex items-end"><Checkbox checked={editing.is_active ?? true} onChange={(value) => setEditing({ ...editing, is_active: value })} label="Ativa" /></div>
+            <div className="sm:col-span-2"><Checkbox checked={editing.is_active ?? true} onChange={(value) => setEditing({ ...editing, is_active: value })} label="Aparece no cardápio" /></div>
             <div className="flex gap-2 sm:col-span-2">
               <Button size="sm" loading={save.isPending} disabled={(editing.name ?? "").trim().length < 1} onClick={() => save.mutate(editing)}>Salvar</Button>
               <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>Cancelar</Button>
@@ -87,27 +83,69 @@ function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
-export default function Products() {
-  const auth = useAdminAuth();
+/** Disponível/esgotado e quantidade (vazio = sem limite). Atendente pode usar. */
+function AvailabilityControl({ product }: { product: Product }) {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const canEdit = auth.hasRole("ADMIN");
-  const products = useQuery({ queryKey: ["admin", "products"], queryFn: listAdminProducts });
-  const categories = useQuery({ queryKey: ["admin", "categories"], queryFn: listAdminCategories });
-  const [search, setSearch] = useState("");
-  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [stock, setStock] = useState(product.stock === null ? "" : String(product.stock));
+  const parsed = stock.trim() === "" ? null : Number(stock);
+  const invalid = parsed !== null && (!Number.isInteger(parsed) || parsed < 0);
+  const dirty = !invalid && parsed !== product.stock;
 
-  const toggle = useMutation({
-    mutationFn: ({ product, patch }: { product: Product; patch: Partial<Product> }) => {
-      const { images: _images, id, created_at: _c, updated_at: _u, stock_available: _s, stock_reserved: _r, ...rest } = { ...product, ...patch };
-      return saveProduct(id, rest);
-    },
+  const mutation = useMutation({
+    mutationFn: ({ active, qty }: { active: boolean; qty: number | null }) => setProductStock(product.id, active, qty),
     onSuccess: () => {
+      toast.success("Produto atualizado");
       void queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
       void queryClient.invalidateQueries({ queryKey: ["catalog"] });
     },
     onError: (error) => toast.error("Não foi possível salvar", friendlyMessage(error)),
   });
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => mutation.mutate({ active: !product.is_active, qty: product.stock })}
+        disabled={mutation.isPending}
+        className={cn(
+          "h-9 rounded-full px-3 text-sm font-semibold",
+          product.is_active ? "bg-sage-100 text-sage-700" : "bg-cream-200 text-cocoa-600",
+        )}
+        aria-pressed={product.is_active}
+        data-testid="toggle-available"
+      >
+        {product.is_active ? "No cardápio" : "Fora do cardápio"}
+      </button>
+      <label className="flex items-center gap-1.5 text-sm">
+        <span className="text-cocoa-600">Qtd.</span>
+        <Input
+          value={stock}
+          onChange={(e) => setStock(e.target.value.replace(/[^\d]/g, ""))}
+          inputMode="numeric"
+          placeholder="sem limite"
+          className="h-9 w-24"
+          aria-label={`Quantidade de ${product.name}`}
+          error={invalid ? "inválido" : undefined}
+          data-testid="stock-input"
+        />
+      </label>
+      {dirty && (
+        <Button size="sm" loading={mutation.isPending} onClick={() => mutation.mutate({ active: product.is_active, qty: parsed })} data-testid="save-stock">
+          Salvar
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export default function Products() {
+  const auth = useAdminAuth();
+  const isOwner = auth.hasRole("OWNER");
+  const products = useQuery({ queryKey: ["admin", "products"], queryFn: listAdminProducts });
+  const categories = useQuery({ queryKey: ["admin", "categories"], queryFn: listAdminCategories });
+  const [search, setSearch] = useState("");
+  const [categoryOpen, setCategoryOpen] = useState(false);
 
   const categoryName = useMemo(() => new Map((categories.data ?? []).map((category) => [category.id, category.name])), [categories.data]);
   const rows = (products.data ?? []).filter((product) => !search.trim() || product.name.toLowerCase().includes(search.trim().toLowerCase()));
@@ -116,8 +154,8 @@ export default function Products() {
     <div>
       <PageHeader
         title="Produtos"
-        description="Alterações de preço e disponibilidade aparecem na loja e no cardápio do Wix na hora, sem novo deploy."
-        actions={canEdit && (
+        description="Mudanças aparecem na loja e no cardápio do Wix na hora. Quantidade vazia = sem limite (feito sob encomenda)."
+        actions={isOwner && (
           <>
             <Button variant="secondary" size="sm" icon={<Tags className="size-4" aria-hidden />} onClick={() => setCategoryOpen(true)}>Categorias</Button>
             <ButtonLink to="/admin/produtos/novo" size="sm" icon={<Plus className="size-4" aria-hidden />}>Novo produto</ButtonLink>
@@ -134,48 +172,40 @@ export default function Products() {
       {products.isError ? (
         <ErrorState error={products.error} onRetry={() => products.refetch()} title="Não foi possível carregar os produtos" />
       ) : products.isLoading ? (
-        <div className="space-y-2">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-20" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-24" />)}</div>
       ) : rows.length === 0 ? (
         <div className="card">
-          <EmptyState title="Nenhum produto" description="Cadastre o primeiro produto do cardápio." action={canEdit && <ButtonLink to="/admin/produtos/novo">Novo produto</ButtonLink>} />
+          <EmptyState title="Nenhum produto" description="Cadastre o primeiro produto do cardápio." action={isOwner && <ButtonLink to="/admin/produtos/novo">Novo produto</ButtonLink>} />
         </div>
       ) : (
         <ul className="card divide-y divide-cream-200">
-          {rows.map((product) => {
-            const status = stockStatusOf(product);
-            return (
-              <li key={product.id} className="flex items-center gap-3 p-3 sm:p-4" data-testid="admin-product-row" data-product-slug={product.slug}>
-                <span className="size-14 shrink-0 overflow-hidden rounded-xl bg-cream-100"><ProductImage product={product} sizes="56px" /></span>
-                <div className="min-w-0 flex-1">
+          {rows.map((product) => (
+            <li key={product.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:p-4" data-testid="admin-product-row" data-product-slug={product.slug}>
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="size-14 shrink-0 overflow-hidden rounded-xl bg-cream-100"><ProductImage product={product} /></span>
+                <div className="min-w-0">
                   <p className="truncate font-semibold">
                     {product.name}
                     {product.is_featured && <Star className="ml-1.5 inline size-4 fill-butter-300 text-caramel-500" aria-label="Destaque" />}
                   </p>
                   <p className="text-sm text-cocoa-600">
-                    <span className="font-semibold text-cocoa-900 tabular-nums">{formatBRL(product.price_cents)}</span>
+                    <span className="font-semibold tabular-nums text-cocoa-900">{formatBRL(product.price_cents)}</span>
                     {" · "}{categoryName.get(product.category_id ?? "") ?? "Sem categoria"}
-                    {" · "}<span className={status === "SOLD_OUT" ? "text-berry-700" : status === "LOW" ? "text-caramel-700" : ""}>{product.stock_available} em estoque</span>
+                    {product.stock === 0 && <span className="text-berry-700"> · esgotado</span>}
                   </p>
                 </div>
-                {!product.is_active && <Badge>Inativo</Badge>}
-                {canEdit && (
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ product, patch: { is_active: !product.is_active } })}
-                      aria-label={product.is_active ? `Ocultar ${product.name}` : `Publicar ${product.name}`} title={product.is_active ? "Ocultar da loja" : "Publicar na loja"}>
-                      {product.is_active ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                    </Button>
-                    <ButtonLink to={`/admin/produtos/${product.id}`} size="sm" variant="secondary" icon={<Pencil className="size-4" aria-hidden />}>Editar</ButtonLink>
-                  </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <AvailabilityControl key={`${product.id}-${product.stock}-${product.is_active}`} product={product} />
+                {isOwner && (
+                  <ButtonLink to={`/admin/produtos/${product.id}`} size="sm" variant="secondary" icon={<Pencil className="size-4" aria-hidden />}>Editar</ButtonLink>
                 )}
-              </li>
-            );
-          })}
+              </div>
+            </li>
+          ))}
         </ul>
       )}
-      {!canEdit && <p className="mt-4 text-sm text-cocoa-600">Seu papel permite consultar produtos. Para editar, fale com um administrador.</p>}
       <CategoryManager open={categoryOpen} onClose={() => setCategoryOpen(false)} />
     </div>
   );
 }
-
-

@@ -8,7 +8,6 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
-import { initAnalyticsFromConsent } from "@/lib/analytics";
 import { isConfigured } from "@/lib/env";
 import { ApiError } from "@/lib/errors";
 import NotConfigured from "@/pages/NotConfigured";
@@ -26,8 +25,6 @@ const queryClient = new QueryClient({
     mutations: { retry: false },
   },
 });
-
-initAnalyticsFromConsent();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

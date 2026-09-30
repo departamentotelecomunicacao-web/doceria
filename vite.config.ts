@@ -6,8 +6,7 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 
 /**
  * Content-Security-Policy via <meta> (GitHub Pages não permite cabeçalhos).
- * Aplicada apenas no build: libera somente o Supabase configurado, o ViaCEP
- * (autopreenchimento de CEP) e, se configurados, GTM/GA4/Meta Pixel.
+ * Aplicada apenas no build: libera somente o Supabase configurado.
  */
 function contentSecurityPolicy(env: Record<string, string>): Plugin {
   return {
@@ -17,18 +16,8 @@ function contentSecurityPolicy(env: Record<string, string>): Plugin {
       const supabase = env.VITE_SUPABASE_URL ? new URL(env.VITE_SUPABASE_URL).origin : "";
       const supabaseWs = supabase.replace(/^http/, "ws");
       const scriptSrc = ["'self'"];
-      const connectSrc = ["'self'", supabase, supabaseWs, "https://viacep.com.br"];
+      const connectSrc = ["'self'", supabase, supabaseWs];
       const imgSrc = ["'self'", "data:", "blob:", supabase];
-      if (env.VITE_GTM_ID || env.VITE_GA4_ID) {
-        scriptSrc.push("https://www.googletagmanager.com");
-        connectSrc.push("https://*.google-analytics.com", "https://*.analytics.google.com", "https://www.googletagmanager.com");
-        imgSrc.push("https://*.google-analytics.com", "https://www.googletagmanager.com");
-      }
-      if (env.VITE_META_PIXEL_ID) {
-        scriptSrc.push("https://connect.facebook.net");
-        connectSrc.push("https://www.facebook.com");
-        imgSrc.push("https://www.facebook.com");
-      }
       const policy = [
         "default-src 'self'",
         `script-src ${scriptSrc.join(" ")}`,

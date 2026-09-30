@@ -58,11 +58,9 @@ export default function Products() {
           <p className="flex max-w-2xl items-start gap-2 text-sm text-cocoa-600">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
-              Estoque atualizado em tempo real.
-              {config.data.minOrderCents > 0 && <> Pedido mínimo {formatBRL(config.data.minOrderCents)}.</>}
-              {config.data.deliveryEnabled && config.data.freeDeliveryMinSubtotalCents && (
-                <> Entrega grátis acima de {formatBRL(config.data.freeDeliveryMinSubtotalCents)}.</>
-              )}
+              {config.data.deliveryEnabled && <>Entrega em {config.data.deliveryCity} por {formatBRL(config.data.deliveryFeeCents)}. </>}
+              {config.data.pickupEnabled && <>Retirada grátis. </>}
+              {config.data.minOrderCents > 0 && <>Pedido mínimo {formatBRL(config.data.minOrderCents)}.</>}
             </span>
           </p>
         )}

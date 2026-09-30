@@ -25,8 +25,12 @@ export interface ReconciledCart {
   lines: CartLine[];
 }
 
-export function maxPurchasable(product: Pick<Product, "stock_available" | "max_per_order">): number {
-  return Math.max(0, Math.min(product.stock_available, product.max_per_order));
+/** Limite por item no pedido (o banco aceita até 99). */
+export const MAX_PER_ITEM = 99;
+
+/** Quanto do produto pode ir para o carrinho: estoque, se houver controle, ou 99. */
+export function maxPurchasable(product: Pick<Product, "stock">): number {
+  return product.stock === null ? MAX_PER_ITEM : Math.max(0, Math.min(product.stock, MAX_PER_ITEM));
 }
 
 export function addLine(lines: CartLine[], productId: string, quantity: number, max: number): CartLine[] {

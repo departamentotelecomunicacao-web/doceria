@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Product } from "@/types/domain";
-import { addLine, cartFingerprint, maxPurchasable, reconcileCart, setLineQuantity } from "./cartLogic";
+import { addLine, cartFingerprint, MAX_PER_ITEM, maxPurchasable, reconcileCart, setLineQuantity } from "./cartLogic";
 
 function product(overrides: Partial<Product>): Product {
   return {
     id: "p1", category_id: null, name: "Cookie", slug: "cookie", short_description: "", description: "",
-    price_cents: 1200, compare_at_price_cents: null, stock_available: 10, stock_reserved: 0, low_stock_threshold: 2,
-    max_per_order: 24, is_active: true, is_featured: false, sort_order: 0, allergens: [], ingredients: "",
-    weight_grams: null, created_at: "", updated_at: "", images: [], ...overrides,
+    price_cents: 1200, image_path: null, stock: null, is_active: true, is_featured: false, sort_order: 0,
+    created_at: "", updated_at: "", ...overrides,
   };
 }
 
 describe("carrinho", () => {
-  it("limita a quantidade ao estoque e ao máximo por pedido", () => {
-    expect(maxPurchasable(product({ stock_available: 3, max_per_order: 24 }))).toBe(3);
-    expect(maxPurchasable(product({ stock_available: 50, max_per_order: 6 }))).toBe(6);
+  it("sem controle de estoque vai até 99; com estoque, até a quantidade disponível", () => {
+    expect(maxPurchasable(product({ stock: null }))).toBe(MAX_PER_ITEM);
+    expect(maxPurchasable(product({ stock: 3 }))).toBe(3);
+    expect(maxPurchasable(product({ stock: 500 }))).toBe(MAX_PER_ITEM);
     expect(addLine([{ productId: "p1", quantity: 2 }], "p1", 5, 4)).toEqual([{ productId: "p1", quantity: 4 }]);
     expect(setLineQuantity([{ productId: "p1", quantity: 2 }], "p1", 0, 4)).toEqual([]);
   });
@@ -25,7 +25,7 @@ describe("carrinho", () => {
     expect(result.count).toBe(2);
   });
 
-  it("remove esgotados/inativos e reduz ao disponível", () => {
+  it("remove esgotados/indisponíveis e reduz ao disponível", () => {
     const result = reconcileCart(
       [
         { productId: "p1", quantity: 5 },
@@ -34,8 +34,8 @@ describe("carrinho", () => {
         { productId: "p4", quantity: 1 },
       ],
       [
-        product({ id: "p1", stock_available: 3 }),
-        product({ id: "p2", stock_available: 0 }),
+        product({ id: "p1", stock: 3 }),
+        product({ id: "p2", stock: 0 }),
         product({ id: "p3", is_active: false }),
       ],
     );

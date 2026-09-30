@@ -33,9 +33,3 @@ export function centsToInput(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) return "";
   return (cents / 100).toFixed(2).replace(".", ",");
 }
-
-export function formatDistanceKm(meters: number | null | undefined): string {
-  if (meters === null || meters === undefined) return "";
-  const km = meters / 1000;
-  return `${km.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
-}

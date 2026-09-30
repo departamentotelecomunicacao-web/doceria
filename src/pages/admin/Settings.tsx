@@ -5,33 +5,30 @@ import { getSettings } from "@/api/admin";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { cn } from "@/components/ui/cn";
 import { ErrorState, LoadingBlock } from "@/components/ui/States";
-import { AuditTab, ContentTab, DeliveryTab, OperationTab, PaymentsTab, StoreTab, TeamTab } from "./settings/Tabs";
+import { DeliveryTab, PaymentsTab, StoreTab, TeamTab } from "./settings/Tabs";
 
 const TABS = [
-  { key: "loja", label: "Loja", owner: false },
-  { key: "conteudo", label: "Conteúdo", owner: false },
-  { key: "funcionamento", label: "Funcionamento", owner: false },
-  { key: "entrega", label: "Entrega", owner: false },
-  { key: "pagamentos", label: "Pagamentos", owner: false },
-  { key: "equipe", label: "Equipe", owner: true },
-  { key: "atividades", label: "Atividades", owner: false },
+  { key: "loja", label: "Loja" },
+  { key: "entrega", label: "Entrega e agenda" },
+  { key: "pagamento", label: "Pagamento e avisos" },
+  { key: "equipe", label: "Equipe" },
 ] as const;
 
 export default function Settings() {
   const auth = useAdminAuth();
   const [params, setParams] = useSearchParams();
-  const settings = useQuery({ queryKey: ["admin", "settings"], queryFn: getSettings, enabled: auth.hasRole("ADMIN") });
-  const tabs = TABS.filter((tab) => !tab.owner || auth.hasRole("OWNER"));
-  const active = tabs.find((tab) => tab.key === params.get("aba"))?.key ?? "loja";
+  const isOwner = auth.hasRole("OWNER");
+  const settings = useQuery({ queryKey: ["admin", "settings"], queryFn: getSettings, enabled: isOwner });
+  const active = TABS.find((tab) => tab.key === params.get("aba"))?.key ?? "loja";
 
-  if (!auth.hasRole("ADMIN")) return <Navigate to="/admin/dashboard" replace />;
+  if (!isOwner) return <Navigate to="/admin/pedidos" replace />;
 
   return (
     <div>
-      <PageHeader title="Configurações" description="Todas as regras ficam no banco: a loja e o cardápio do Wix passam a usá-las imediatamente." />
+      <PageHeader title="Configurações" description="A loja e o cardápio do Wix passam a usar os novos valores na hora." />
       <div className="-mx-4 mb-6 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
         <div className="flex w-max gap-1 rounded-full bg-cream-200/70 p-1" role="tablist">
-          {tabs.map((tab) => (
+          {TABS.map((tab) => (
             <button key={tab.key} type="button" role="tab" aria-selected={active === tab.key}
               onClick={() => setParams({ aba: tab.key }, { replace: true })}
               className={cn("h-9 rounded-full px-4 text-sm font-semibold", active === tab.key ? "bg-white text-cocoa-900 shadow-sm" : "text-cocoa-600 hover:text-cocoa-900")}>
@@ -41,17 +38,15 @@ export default function Settings() {
         </div>
       </div>
 
-      {active === "equipe" ? <TeamTab /> : active === "atividades" ? <AuditTab /> : settings.isLoading ? (
+      {active === "equipe" ? <TeamTab /> : settings.isLoading ? (
         <LoadingBlock />
       ) : settings.isError || !settings.data ? (
         <ErrorState error={settings.error} onRetry={() => settings.refetch()} title="Não foi possível carregar as configurações" />
       ) : (
         <div className="max-w-4xl">
           {active === "loja" && <StoreTab settings={settings.data} />}
-          {active === "conteudo" && <ContentTab settings={settings.data} />}
-          {active === "funcionamento" && <OperationTab settings={settings.data} />}
           {active === "entrega" && <DeliveryTab settings={settings.data} />}
-          {active === "pagamentos" && <PaymentsTab settings={settings.data} />}
+          {active === "pagamento" && <PaymentsTab settings={settings.data} />}
         </div>
       )}
     </div>

@@ -1,17 +1,15 @@
-import { ArrowLeft, Scale, ShoppingBag, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Price } from "@/components/store/Price";
 import { ProductImage } from "@/components/store/ProductImage";
 import { StockBadge } from "@/components/store/StockBadge";
-import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
 import { QuantityStepper } from "@/components/ui/QuantityStepper";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/States";
 import { useAddToCart } from "@/hooks/useAddToCart";
 import { useProduct, useStoreConfig } from "@/hooks/useStore";
-import { centsToValue, track } from "@/lib/analytics";
 import { storeUrl } from "@/lib/env";
 import { useDocumentMeta } from "@/lib/seo";
 import { productImageUrl } from "@/lib/rest";
@@ -25,7 +23,6 @@ export default function ProductDetail() {
   const config = useStoreConfig();
   const addToCart = useAddToCart();
   const [quantity, setQuantity] = useState(1);
-  const [imageIndex, setImageIndex] = useState(0);
   const product = query.data;
   const max = product ? maxPurchasable(product) : 0;
   const autoAdded = useRef(false);
@@ -34,14 +31,14 @@ export default function ProductDetail() {
     title: product ? `${product.name}${config.data ? ` · ${config.data.storeName}` : ""}` : "Produto",
     description: product?.short_description || product?.description.slice(0, 155),
     canonical: product ? storeUrl(`/produto/${product.slug}`) : undefined,
-    image: productImageUrl(product?.images[0]?.storage_path),
+    image: productImageUrl(product?.image_path),
     jsonLd: product
       ? {
         "@context": "https://schema.org",
         "@type": "Product",
         name: product.name,
         description: product.description || product.short_description,
-        image: product.images.map((image) => productImageUrl(image.storage_path)).filter(Boolean),
+        image: productImageUrl(product.image_path) ?? undefined,
         brand: config.data ? { "@type": "Brand", name: config.data.storeName } : undefined,
         offers: {
           "@type": "Offer",
@@ -53,14 +50,6 @@ export default function ProductDetail() {
       }
       : null,
   });
-
-  useEffect(() => {
-    if (!product) return;
-    track("view_item", {
-      value: centsToValue(product.price_cents),
-      items: [{ item_id: product.id, item_name: product.name, price: centsToValue(product.price_cents), quantity: 1 }],
-    });
-  }, [product]);
 
   // Vindo do cardápio incorporado (Wix): "Comprar" abre a loja já com o item.
   useEffect(() => {
@@ -107,26 +96,8 @@ export default function ProductDetail() {
       </Link>
 
       <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
-        <div className="space-y-3">
-          <div className="aspect-square overflow-hidden rounded-[2rem] bg-cream-100">
-            <ProductImage product={product} index={imageIndex} priority sizes="(min-width: 1024px) 50vw, 100vw" className={cn(soldOut && "opacity-70")} />
-          </div>
-          {product.images.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto" aria-label="Galeria">
-              {product.images.map((image, index) => (
-                <button
-                  key={image.id}
-                  type="button"
-                  onClick={() => setImageIndex(index)}
-                  className={cn("size-20 shrink-0 overflow-hidden rounded-xl border-2", index === imageIndex ? "border-cocoa-900" : "border-transparent")}
-                  aria-label={`Foto ${index + 1}`}
-                  aria-pressed={index === imageIndex}
-                >
-                  <ProductImage product={product} index={index} sizes="80px" />
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="aspect-square overflow-hidden rounded-[2rem] bg-cream-100">
+          <ProductImage product={product} priority className={cn(soldOut && "opacity-70")} />
         </div>
 
         <div className="space-y-6">
@@ -134,7 +105,7 @@ export default function ProductDetail() {
             <div className="flex flex-wrap gap-2"><StockBadge product={product} /></div>
             <h1 className="font-display text-4xl leading-tight sm:text-5xl">{product.name}</h1>
             {product.short_description && <p className="text-lg text-cocoa-700">{product.short_description}</p>}
-            <Price cents={product.price_cents} compareAtCents={product.compare_at_price_cents} size="lg" />
+            <Price cents={product.price_cents} size="lg" />
           </div>
 
           {soldOut ? (
@@ -163,31 +134,6 @@ export default function ProductDetail() {
             </section>
           )}
 
-          <section className="grid gap-6 border-t border-cream-200 pt-6 sm:grid-cols-2">
-            {product.ingredients && (
-              <div className="space-y-2">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-cocoa-600">Ingredientes</h2>
-                <p className="text-sm text-cocoa-700">{product.ingredients}</p>
-              </div>
-            )}
-            <div className="space-y-3">
-              {product.allergens.length > 0 && (
-                <div className="space-y-2">
-                  <h2 className="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wider text-cocoa-600">
-                    <TriangleAlert className="size-4" aria-hidden /> Alergênicos
-                  </h2>
-                  <div className="flex flex-wrap gap-1.5">
-                    {product.allergens.map((allergen) => <Badge key={allergen} tone="warning">{allergen}</Badge>)}
-                  </div>
-                </div>
-              )}
-              {product.weight_grams && (
-                <p className="flex items-center gap-1.5 text-sm text-cocoa-700">
-                  <Scale className="size-4" aria-hidden /> {product.weight_grams} g
-                </p>
-              )}
-            </div>
-          </section>
         </div>
       </div>
     </div>

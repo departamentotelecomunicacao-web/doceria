@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchCatalog, fetchProductBySlug } from "@/api/catalog";
-import { fetchPublicOrder, fetchSlots, fetchStoreConfig } from "@/api/store";
-import type { FulfillmentType } from "@/types/domain";
+import { fetchPublicOrder, fetchStoreConfig } from "@/api/store";
 
 // Dados vivem no Supabase; o cache do navegador é curto para que mudanças de
 // preço/estoque apareçam sem novo deploy.
@@ -23,17 +22,7 @@ export function useProduct(slug: string | undefined) {
   });
 }
 
-export function useSlots(type: FulfillmentType, enabled = true) {
-  return useQuery({
-    queryKey: ["slots", type],
-    queryFn: () => fetchSlots(type),
-    enabled,
-    staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
-  });
-}
-
-const FINAL_STATUSES = new Set(["COMPLETED", "CANCELED", "EXPIRED"]);
+const FINAL_STATUSES = new Set(["DELIVERED", "CANCELED"]);
 
 export function usePublicOrder(token: string | undefined) {
   return useQuery({

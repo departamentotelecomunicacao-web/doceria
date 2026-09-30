@@ -15,7 +15,7 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const redirectTo = params.get("voltar")?.startsWith("/admin") ? params.get("voltar")! : "/admin/dashboard";
+  const redirectTo = params.get("voltar")?.startsWith("/admin") ? params.get("voltar")! : "/admin/pedidos";
   const reason = auth.signOutReason ?? (location.state as { reason?: string } | null)?.reason ?? null;
 
   if (auth.status === "loading" && !submitting) return <LoadingBlock className="min-h-dvh" label="Verificando sessão…" />;

@@ -1,9 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // E2E contra o stack local: Supabase (supabase start + functions serve com o
-// stub de rotas configurado) e o build estático servido como no GitHub Pages.
+// stub de e-mail configurado) e o build estático servido como no GitHub Pages.
 // Os fusos dos navegadores são diferentes de America/Sao_Paulo de propósito:
-// as regras de horário não podem depender do relógio do cliente.
+// a agenda da loja não pode depender do relógio do cliente.
 const CI = Boolean(process.env.CI);
 
 export default defineConfig({
@@ -33,8 +33,8 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      command: "node tests/stubs/google-routes-stub.mjs",
-      url: "http://127.0.0.1:54400/__stats",
+      command: "node tests/stubs/email-stub.mjs",
+      url: "http://127.0.0.1:54401/__emails",
       reuseExistingServer: true,
     },
   ],

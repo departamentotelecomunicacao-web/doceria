@@ -24,7 +24,7 @@ interface AdminAuthValue {
   hasRole: (min: AppRole) => boolean;
 }
 
-const RANK: Record<AppRole, number> = { OPERATOR: 1, ADMIN: 2, OWNER: 3 };
+const RANK: Record<AppRole, number> = { STAFF: 1, OWNER: 2 };
 const AdminAuthContext = createContext<AdminAuthValue | null>(null);
 
 export class SignInError extends Error {}
@@ -96,7 +96,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
     if (error) {
       if (/invalid login credentials/i.test(error.message)) throw new SignInError("E-mail ou senha incorretos.");
-      if (/banned/i.test(error.message)) throw new SignInError("Esta conta foi desativada. Fale com o proprietário da loja.");
+      if (/banned/i.test(error.message)) throw new SignInError("Esta conta foi desativada. Fale com o dono ou a dona da loja.");
       if (/rate|too many/i.test(error.message)) throw new SignInError("Muitas tentativas. Aguarde alguns minutos.");
       if (/fetch|network/i.test(error.message)) throw new SignInError("Sem conexão com o servidor. Verifique a internet.");
       throw new SignInError("Não foi possível entrar agora. Tente novamente.");
@@ -128,7 +128,6 @@ export function useAdminAuth(): AdminAuthValue {
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {
-  OWNER: "Proprietário(a)",
-  ADMIN: "Administrador(a)",
-  OPERATOR: "Operador(a)",
+  OWNER: "Dono(a)",
+  STAFF: "Atendente",
 };

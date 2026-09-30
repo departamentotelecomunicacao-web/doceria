@@ -37,9 +37,9 @@ export function Header() {
           <NavLink to="/produtos" className={navLink}>
             Cardápio
           </NavLink>
-          {config.data?.wixSiteUrl && (
-            <a href={config.data.wixSiteUrl} className="hidden rounded-full px-3 py-2 text-sm font-semibold text-cocoa-600 hover:text-cocoa-900 sm:inline-flex">
-              Nossa história
+          {config.data?.institutionalUrl && (
+            <a href={config.data.institutionalUrl} className="hidden rounded-full px-3 py-2 text-sm font-semibold text-cocoa-600 hover:text-cocoa-900 sm:inline-flex">
+              Nosso site
             </a>
           )}
           <Link

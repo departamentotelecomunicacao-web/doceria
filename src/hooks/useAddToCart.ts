@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useToast } from "@/components/ui/Toast";
-import { centsToValue, track } from "@/lib/analytics";
 import { useCart } from "@/store/cart";
 import { maxPurchasable } from "@/store/cartLogic";
 import type { Product } from "@/types/domain";
@@ -24,10 +23,6 @@ export function useAddToCart() {
     }
     const added = Math.min(quantity, max - current);
     cart.add(product.id, added, max);
-    track("add_to_cart", {
-      value: centsToValue(product.price_cents * added),
-      items: [{ item_id: product.id, item_name: product.name, price: centsToValue(product.price_cents), quantity: added }],
-    });
     toast.show({
       tone: "success",
       title: `${product.name} no carrinho`,

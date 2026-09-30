@@ -12,9 +12,6 @@ export const env = {
   /** URL pública da loja (sem barra final). */
   siteUrl: siteUrl || (typeof window !== "undefined" ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}` : ""),
   basePath: import.meta.env.BASE_URL,
-  gtmId: clean(import.meta.env.VITE_GTM_ID),
-  ga4Id: clean(import.meta.env.VITE_GA4_ID),
-  metaPixelId: clean(import.meta.env.VITE_META_PIXEL_ID),
   embedParentOrigins: clean(import.meta.env.VITE_EMBED_PARENT_ORIGINS)
     .split(",")
     .map((origin) => origin.trim().replace(/\/$/, ""))
@@ -22,8 +19,6 @@ export const env = {
 } as const;
 
 export const isConfigured = Boolean(env.supabaseUrl && env.supabaseKey);
-
-export const hasAnalytics = Boolean(env.gtmId || env.ga4Id || env.metaPixelId);
 
 /** Monta uma URL absoluta da loja para um caminho interno (ex.: "/produto/x"). */
 export function storeUrl(path: string): string {

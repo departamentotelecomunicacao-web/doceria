@@ -1,21 +1,9 @@
-// Acesso a dados do painel. Toda regra (papéis, transições, estoque) é
-// aplicada no banco (RLS + funções); aqui só chamamos e tipamos.
+// Acesso a dados do painel. As regras (papéis, transições, estoque, totais)
+// ficam no banco (RLS + funções); aqui só chamamos e tipamos.
 import { ApiError, fromPostgrest } from "@/lib/errors";
 import { callFunction } from "@/lib/functions";
 import { getAdminClient } from "@/lib/supabase";
-import type {
-  AppRole,
-  Category,
-  DeliveryPricingMode,
-  FulfillmentType,
-  InventoryMovementType,
-  OrderStatus,
-  PaymentMethod,
-  PaymentStatus,
-  Product,
-  ProductImage,
-  StockStatus,
-} from "@/types/domain";
+import type { AppRole, Category, DayPeriod, FulfillmentType, OrderStatus, PaymentMethod, Product } from "@/types/domain";
 
 function client() {
   return getAdminClient();
@@ -27,39 +15,13 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-// -----------------------------------------------------------------------------
-// Pedidos
-// -----------------------------------------------------------------------------
-export interface OrderListRow {
-  id: string;
-  code: string;
-  status: OrderStatus;
-  payment_status: PaymentStatus;
-  payment_method: PaymentMethod;
-  fulfillment_type: FulfillmentType;
-  customer_name: string;
-  customer_phone: string | null;
-  total_cents: number;
-  scheduled_for: string;
-  created_at: string;
-  source: "STOREFRONT" | "ADMIN";
+async function accessToken(): Promise<string> {
+  const { data } = await client().auth.getSession();
+  if (!data.session) throw new ApiError(401, "AUTH_REQUIRED", "Sua sessão expirou. Entre novamente.");
+  return data.session.access_token;
 }
 
-export interface OrderFilters {
-  statuses: OrderStatus[];
-  fulfillment: FulfillmentType | "ALL";
-  search: string;
-  /** Datas AAAA-MM-DD no fuso da loja. */
-  from: string | null;
-  to: string | null;
-  page: number;
-  pageSize: number;
-}
-
-/**
- * Início do dia (AAAA-MM-DD) no fuso da loja, em ISO/UTC. O deslocamento é
- * obtido do próprio Intl para a data (sem depender do fuso do aparelho).
- */
+/** Início do dia (AAAA-MM-DD) em America/Sao_Paulo, em ISO/UTC. */
 export function storeDayStartIso(date: string): string {
   const probe = new Date(`${date}T12:00:00Z`);
   const offsetName = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", timeZoneName: "longOffset" })
@@ -69,20 +31,54 @@ export function storeDayStartIso(date: string): string {
   return new Date(`${date}T00:00:00${offset}`).toISOString();
 }
 
-export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderListRow[]; total: number }> {
-  let query = client()
-    .from("orders")
-    .select("id,code,status,payment_status,payment_method,fulfillment_type,customer_name,customer_phone,total_cents,scheduled_for,created_at,source", { count: "exact" })
-    .order("created_at", { ascending: false });
+// -----------------------------------------------------------------------------
+// Pedidos
+// -----------------------------------------------------------------------------
+export interface OrderListRow {
+  id: string;
+  code: string;
+  status: OrderStatus;
+  fulfillment_type: FulfillmentType;
+  payment_method: PaymentMethod;
+  is_paid: boolean;
+  customer_name: string;
+  customer_phone: string;
+  address_district: string | null;
+  total_cents: number;
+  scheduled_date: string;
+  scheduled_period: DayPeriod;
+  created_at: string;
+}
 
-  if (filters.statuses.length > 0) query = query.in("status", filters.statuses);
-  if (filters.fulfillment !== "ALL") query = query.eq("fulfillment_type", filters.fulfillment);
-  if (filters.from) query = query.gte("created_at", storeDayStartIso(filters.from));
-  if (filters.to) {
-    const end = new Date(storeDayStartIso(filters.to));
-    end.setUTCDate(end.getUTCDate() + 1);
-    query = query.lt("created_at", end.toISOString());
+export type OrderView = "open" | "today" | "all";
+
+export interface OrderFilters {
+  view: OrderView;
+  today: string;
+  search: string;
+  page: number;
+  pageSize: number;
+}
+
+const LIST_COLUMNS =
+  "id,code,status,fulfillment_type,payment_method,is_paid,customer_name,customer_phone,address_district," +
+  "total_cents,scheduled_date,scheduled_period,created_at";
+
+export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderListRow[]; total: number }> {
+  let query = client().from("orders").select(LIST_COLUMNS, { count: "exact" });
+
+  if (filters.view === "open") {
+    query = query
+      .in("status", ["RECEIVED", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "READY_FOR_PICKUP"])
+      .order("scheduled_date", { ascending: true })
+      .order("scheduled_period", { ascending: true })
+      .order("created_at", { ascending: true });
+  } else if (filters.view === "today") {
+    query = query.eq("scheduled_date", filters.today).order("scheduled_period").order("created_at");
+  } else {
+    query = query.order("created_at", { ascending: false });
   }
+
   const term = filters.search.trim().replace(/[%,()]/g, " ").trim();
   if (term) {
     const digits = term.replace(/\D/g, "");
@@ -93,153 +89,157 @@ export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderLi
   const fromIndex = filters.page * filters.pageSize;
   const { data, error, status, count } = await query.range(fromIndex, fromIndex + filters.pageSize - 1);
   if (error) throw fromPostgrest(error, status);
-  return { rows: (data ?? []) as OrderListRow[], total: count ?? 0 };
+  return { rows: (data ?? []) as unknown as OrderListRow[], total: count ?? 0 };
 }
 
-export async function countActiveOrders(): Promise<{ pending: number }> {
-  const { count, error, status } = await client()
-    .from("orders")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["NEW", "AWAITING_PAYMENT"]);
-  if (error) throw fromPostgrest(error, status);
-  return { pending: count ?? 0 };
+export interface DaySummary {
+  receivedToday: number;
+  salesTodayCents: number;
+  newOrders: number;
+  scheduledToday: number;
+}
+
+/** Números do topo da tela de pedidos (hoje, horário de Brasília). */
+export async function getDaySummary(today: string): Promise<DaySummary> {
+  const [created, pending, scheduled] = await Promise.all([
+    client().from("orders").select("total_cents,status").gte("created_at", storeDayStartIso(today)),
+    client().from("orders").select("id", { count: "exact", head: true }).eq("status", "RECEIVED"),
+    client().from("orders").select("id", { count: "exact", head: true })
+      .eq("scheduled_date", today).not("status", "in", "(DELIVERED,CANCELED)"),
+  ]);
+  const error = created.error ?? pending.error ?? scheduled.error;
+  if (error) throw fromPostgrest(error, created.status);
+  const rows = (created.data ?? []) as { total_cents: number; status: OrderStatus }[];
+  const valid = rows.filter((row) => row.status !== "CANCELED");
+  return {
+    receivedToday: rows.length,
+    salesTodayCents: valid.reduce((sum, row) => sum + row.total_cents, 0),
+    newOrders: pending.count ?? 0,
+    scheduledToday: scheduled.count ?? 0,
+  };
+}
+
+export interface AdminOrder {
+  id: string;
+  code: string;
+  public_token: string;
+  status: OrderStatus;
+  fulfillment_type: FulfillmentType;
+  payment_method: PaymentMethod;
+  is_paid: boolean;
+  paid_at: string | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string | null;
+  address_street: string | null;
+  address_number: string | null;
+  address_district: string | null;
+  address_complement: string | null;
+  address_reference: string | null;
+  scheduled_date: string;
+  scheduled_period: DayPeriod;
+  subtotal_cents: number;
+  delivery_fee_cents: number;
+  total_cents: number;
+  cash_change_for_cents: number | null;
+  customer_notes: string | null;
+  internal_notes: string;
+  created_at: string;
+  canceled_at: string | null;
+  delivered_at: string | null;
 }
 
 export interface AdminOrderDetail {
-  id: string;
-  code: string;
-  publicToken: string;
-  source: "STOREFRONT" | "ADMIN";
-  status: OrderStatus;
-  paymentStatus: PaymentStatus;
-  paymentMethod: PaymentMethod;
-  fulfillmentType: FulfillmentType;
-  customerId: string | null;
-  customerName: string;
-  customerPhone: string | null;
-  customerEmail: string | null;
-  deliveryAddress: Record<string, string | null> | null;
-  deliveryDistanceMeters: number | null;
-  deliveryDurationSeconds: number | null;
-  deliveryFeeIsManual: boolean;
-  scheduledFor: string;
-  subtotalCents: number;
-  deliveryFeeCents: number;
-  discountCents: number;
-  totalCents: number;
-  cashChangeForCents: number | null;
-  customerNotes: string | null;
-  internalNotes: string | null;
-  expiresAt: string | null;
-  confirmedAt: string | null;
-  completedAt: string | null;
-  canceledAt: string | null;
-  cancelReason: string | null;
-  createdAt: string;
-  updatedAt: string;
-  items: { id: string; productId: string | null; name: string; quantity: number; unitPriceCents: number; lineTotalCents: number }[];
-  history: { id: number; fromStatus: OrderStatus | null; toStatus: OrderStatus; source: string; note: string | null; actorName: string | null; createdAt: string }[];
-  payments: { id: string; provider: string; method: PaymentMethod; status: PaymentStatus; amountCents: number; note: string | null; actorName: string | null; createdAt: string }[];
-  reservations: { productId: string; quantity: number; status: string; expiresAt: string }[];
-  events: { action: string; summary: string; actorName: string | null; createdAt: string }[];
-  allowedNextStatuses: OrderStatus[];
-  allowedPaymentStatuses: PaymentStatus[];
+  order: AdminOrder;
+  items: { id: string; product_name: string; quantity: number; unit_price_cents: number; line_total_cents: number }[];
+  events: { id: number; kind: string; from_status: OrderStatus | null; to_status: OrderStatus | null; message: string; actorName: string | null; created_at: string }[];
+  notifications: { id: number; kind: string; recipient: string; status: "SENT" | "FAILED" | "SKIPPED"; error: string | null; created_at: string }[];
 }
 
-export const getOrder = (orderId: string) => rpc<AdminOrderDetail>("admin_get_order", { p_order_id: orderId });
-
-export const transitionOrder = (orderId: string, to: OrderStatus, note?: string, restock = true) =>
-  rpc<AdminOrderDetail>("admin_transition_order", { p_order_id: orderId, p_to_status: to, p_note: note ?? null, p_restock: restock });
-
-export const setPaymentStatus = (orderId: string, status: PaymentStatus, note?: string, confirmOrder = false) =>
-  rpc<AdminOrderDetail>("admin_set_payment_status", { p_order_id: orderId, p_status: status, p_note: note ?? null, p_confirm_order: confirmOrder });
-
-export const updateDeliveryFee = (orderId: string, feeCents: number, reason: string) =>
-  rpc<AdminOrderDetail>("admin_update_delivery_fee", { p_order_id: orderId, p_fee_cents: feeCents, p_reason: reason });
-
-export const updateOrderNotes = (orderId: string, notes: string) =>
-  rpc<AdminOrderDetail>("admin_update_order_notes", { p_order_id: orderId, p_internal_notes: notes });
-
-export interface AdminOrderPayload {
-  idempotencyKey: string;
-  customer: { name: string; phone: string; email: string | null };
-  fulfillment: { type: FulfillmentType; scheduledFor: string; address?: Record<string, string | null> };
-  items: { productId: string; quantity: number }[];
-  paymentMethod: PaymentMethod;
-  cashChangeForCents: number | null;
-  notes: string | null;
-  manualDeliveryFeeCents: number | null;
+export async function getOrder(orderId: string): Promise<AdminOrderDetail | null> {
+  const [order, items, events, notifications, profiles] = await Promise.all([
+    client().from("orders").select("*").eq("id", orderId).maybeSingle(),
+    client().from("order_items").select("id,product_name,quantity,unit_price_cents,line_total_cents").eq("order_id", orderId).order("product_name"),
+    client().from("order_events").select("id,kind,from_status,to_status,message,actor_id,created_at").eq("order_id", orderId).order("id"),
+    client().from("order_notifications").select("id,kind,recipient,status,error,created_at").eq("order_id", orderId).order("id"),
+    client().from("profiles").select("id,full_name"),
+  ]);
+  const error = order.error ?? items.error ?? events.error ?? notifications.error;
+  if (error) throw fromPostgrest(error, order.status);
+  if (!order.data) return null;
+  const names = new Map((profiles.data ?? []).map((p) => [p.id as string, p.full_name as string]));
+  return {
+    order: order.data as AdminOrder,
+    items: (items.data ?? []) as AdminOrderDetail["items"],
+    events: (events.data ?? []).map((e) => ({ ...e, actorName: e.actor_id ? names.get(e.actor_id) ?? null : null })) as AdminOrderDetail["events"],
+    notifications: (notifications.data ?? []) as AdminOrderDetail["notifications"],
+  };
 }
 
-export const createAdminOrder = (payload: AdminOrderPayload) =>
-  rpc<{ orderId: string; code: string; publicToken: string }>("admin_create_order", { p_payload: payload });
+export const setOrderStatus = (orderId: string, status: OrderStatus, message?: string) =>
+  rpc<{ status: OrderStatus; changed: boolean }>("admin_set_status", { p_order_id: orderId, p_status: status, p_message: message ?? null });
 
-// -----------------------------------------------------------------------------
-// Dashboard
-// -----------------------------------------------------------------------------
-export type DashboardPeriod = "today" | "7d" | "30d" | "custom";
+export const setOrderPaid = (orderId: string, paid: boolean) =>
+  rpc<void>("admin_set_paid", { p_order_id: orderId, p_paid: paid });
 
-export interface DashboardData {
-  period: { key: DashboardPeriod; from: string; to: string };
-  salesCents: number;
-  soldOrders: number;
-  ordersCount: number;
-  canceledCount: number;
-  averageTicketCents: number;
-  unpaidSoldCents: number;
-  pipeline: { pending: number; inProduction: number; ready: number; outForDelivery: number };
-  topProducts: { productId: string | null; name: string; quantity: number; revenueCents: number }[];
-  lowStock: { productId: string; name: string; stockAvailable: number; stockReserved: number; lowStockThreshold: number }[];
-  daily: { date: string; salesCents: number; orders: number }[];
+export const setDeliveryFee = (orderId: string, feeCents: number) =>
+  rpc<{ totalCents: number }>("admin_set_delivery_fee", { p_order_id: orderId, p_fee_cents: feeCents });
+
+export const setInternalNotes = (orderId: string, notes: string) =>
+  rpc<void>("admin_set_internal_notes", { p_order_id: orderId, p_notes: notes });
+
+export interface NotifyResult {
+  kind: string | null;
+  status: "SENT" | "FAILED" | "SKIPPED";
+  reason?: string;
 }
 
-export const getDashboard = (period: DashboardPeriod, from?: string, to?: string) =>
-  rpc<DashboardData>("admin_dashboard", { p_period: period, p_from: from ?? null, p_to: to ?? null });
+/** E-mail ao cliente sobre o status atual (ou reenvio da confirmação). */
+export async function notifyCustomer(orderId: string, kind: "STATUS" | "RECEIVED", force = false): Promise<NotifyResult> {
+  return callFunction<NotifyResult>("notify-order", { orderId, kind, force }, { accessToken: await accessToken(), timeoutMs: 20_000 });
+}
 
 // -----------------------------------------------------------------------------
 // Produtos e categorias
 // -----------------------------------------------------------------------------
-const PRODUCT_COLUMNS =
-  "*,images:product_images(id,product_id,storage_path,thumb_path,alt_text,width,height,is_main,sort_order)";
-
-function sortImages(product: Product): Product {
-  return {
-    ...product,
-    images: [...(product.images ?? [])].sort((a, b) => Number(b.is_main) - Number(a.is_main) || a.sort_order - b.sort_order),
-  };
-}
-
 export async function listAdminProducts(): Promise<Product[]> {
-  const { data, error, status } = await client().from("products").select(PRODUCT_COLUMNS).order("sort_order").order("name");
+  const { data, error, status } = await client().from("products").select("*").order("sort_order").order("name");
   if (error) throw fromPostgrest(error, status);
-  return (data as unknown as Product[]).map(sortImages);
+  return data as Product[];
 }
 
 export async function getAdminProduct(id: string): Promise<Product | null> {
-  const { data, error, status } = await client().from("products").select(PRODUCT_COLUMNS).eq("id", id).maybeSingle();
+  const { data, error, status } = await client().from("products").select("*").eq("id", id).maybeSingle();
   if (error) throw fromPostgrest(error, status);
-  return data ? sortImages(data as unknown as Product) : null;
+  return (data as Product | null) ?? null;
 }
 
 export type ProductInput = Pick<
   Product,
-  | "category_id" | "name" | "slug" | "short_description" | "description" | "price_cents" | "compare_at_price_cents"
-  | "low_stock_threshold" | "max_per_order" | "is_active" | "is_featured" | "sort_order" | "allergens" | "ingredients" | "weight_grams"
+  "category_id" | "name" | "slug" | "short_description" | "description" | "price_cents" | "stock" | "is_active" | "is_featured" | "sort_order"
 >;
 
-export async function saveProduct(id: string | null, input: ProductInput & { stock_available?: number }): Promise<Product> {
+export async function saveProduct(id: string | null, input: ProductInput): Promise<Product> {
   const query = id
-    ? client().from("products").update(input).eq("id", id).select(PRODUCT_COLUMNS).single()
-    : client().from("products").insert(input).select(PRODUCT_COLUMNS).single();
+    ? client().from("products").update(input).eq("id", id).select("*").single()
+    : client().from("products").insert(input).select("*").single();
   const { data, error, status } = await query;
-  if (error) throw fromPostgrest(error, status);
-  return sortImages(data as unknown as Product);
+  if (error) {
+    if (error.code === "23505") throw new ApiError(409, "SLUG_IN_USE", "Já existe um produto com este endereço (slug). Mude o nome ou o slug.");
+    throw fromPostgrest(error, status);
+  }
+  return data as Product;
 }
 
-export async function deleteProduct(id: string): Promise<void> {
-  const { error, status } = await client().from("products").delete().eq("id", id);
+export async function deleteProduct(product: Product): Promise<void> {
+  const { error, status } = await client().from("products").delete().eq("id", product.id);
   if (error) throw fromPostgrest(error, status);
+  if (product.image_path) await client().storage.from(BUCKET).remove([product.image_path]);
 }
+
+/** Atendente e dono: disponível/esgotado e quantidade (null = sem controle). */
+export const setProductStock = (productId: string, isActive: boolean, stock: number | null) =>
+  rpc<void>("admin_set_product_stock", { p_product_id: productId, p_is_active: isActive, p_stock: stock });
 
 export async function listAdminCategories(): Promise<Category[]> {
   const { data, error, status } = await client().from("categories").select("*").order("sort_order").order("name");
@@ -247,11 +247,14 @@ export async function listAdminCategories(): Promise<Category[]> {
   return data as Category[];
 }
 
-export async function saveCategory(id: string | null, input: Pick<Category, "name" | "slug" | "description" | "sort_order" | "is_active">): Promise<void> {
+export async function saveCategory(id: string | null, input: Pick<Category, "name" | "slug" | "sort_order" | "is_active">): Promise<void> {
   const { error, status } = id
     ? await client().from("categories").update(input).eq("id", id)
     : await client().from("categories").insert(input);
-  if (error) throw fromPostgrest(error, status);
+  if (error) {
+    if (error.code === "23505") throw new ApiError(409, "SLUG_IN_USE", "Já existe uma categoria com este nome.");
+    throw fromPostgrest(error, status);
+  }
 }
 
 export async function deleteCategory(id: string): Promise<void> {
@@ -259,134 +262,32 @@ export async function deleteCategory(id: string): Promise<void> {
   if (error) throw fromPostgrest(error, status);
 }
 
-// Imagens ----------------------------------------------------------------------
+// Foto (uma por produto) -------------------------------------------------------
 const BUCKET = "product-images";
 
-export async function uploadProductImage(
-  productId: string,
-  files: { full: Blob; thumb: Blob; extension: string; contentType: string; width: number; height: number },
-  altText: string,
-  makeMain: boolean,
-  sortOrder: number,
-): Promise<ProductImage> {
+export async function uploadProductPhoto(
+  product: Pick<Product, "id" | "image_path">,
+  file: { blob: Blob; extension: string; contentType: string },
+): Promise<string> {
   const storage = client().storage.from(BUCKET);
-  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const fullPath = `${productId}/${stamp}.${files.extension}`;
-  const thumbPath = `${productId}/${stamp}-600.${files.extension}`;
+  const path = `${product.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${file.extension}`;
+  const upload = await storage.upload(path, file.blob, { contentType: file.contentType, cacheControl: "31536000", upsert: false });
+  if (upload.error) throw new ApiError(400, "UPLOAD_FAILED", "Não foi possível enviar a foto. Verifique o arquivo e tente novamente.");
 
-  const upFull = await storage.upload(fullPath, files.full, { contentType: files.contentType, cacheControl: "31536000", upsert: false });
-  if (upFull.error) throw new ApiError(400, "UPLOAD_FAILED", "Não foi possível enviar a imagem. Verifique o arquivo e tente novamente.");
-  const upThumb = await storage.upload(thumbPath, files.thumb, { contentType: files.contentType, cacheControl: "31536000", upsert: false });
-  if (upThumb.error) {
-    await storage.remove([fullPath]);
-    throw new ApiError(400, "UPLOAD_FAILED", "Não foi possível enviar a imagem. Verifique o arquivo e tente novamente.");
-  }
-
-  if (makeMain) {
-    await client().from("product_images").update({ is_main: false }).eq("product_id", productId);
-  }
-  const { data, error, status } = await client()
-    .from("product_images")
-    .insert({ product_id: productId, storage_path: fullPath, thumb_path: thumbPath, alt_text: altText, width: files.width, height: files.height, is_main: makeMain, sort_order: sortOrder })
-    .select()
-    .single();
+  const { error, status } = await client().from("products").update({ image_path: path }).eq("id", product.id);
   if (error) {
-    await storage.remove([fullPath, thumbPath]);
+    await storage.remove([path]);
     throw fromPostgrest(error, status);
   }
-  return data as ProductImage;
+  if (product.image_path) await storage.remove([product.image_path]);
+  return path;
 }
 
-export async function updateProductImage(image: ProductImage, patch: Partial<Pick<ProductImage, "alt_text" | "is_main" | "sort_order">>): Promise<void> {
-  if (patch.is_main) {
-    await client().from("product_images").update({ is_main: false }).eq("product_id", image.product_id);
-  }
-  const { error, status } = await client().from("product_images").update(patch).eq("id", image.id);
+export async function removeProductPhoto(product: Pick<Product, "id" | "image_path">): Promise<void> {
+  const { error, status } = await client().from("products").update({ image_path: null }).eq("id", product.id);
   if (error) throw fromPostgrest(error, status);
+  if (product.image_path) await client().storage.from(BUCKET).remove([product.image_path]);
 }
-
-export async function deleteProductImage(image: ProductImage): Promise<void> {
-  const { error, status } = await client().from("product_images").delete().eq("id", image.id);
-  if (error) throw fromPostgrest(error, status);
-  await client().storage.from(BUCKET).remove([image.storage_path, image.thumb_path].filter(Boolean) as string[]);
-}
-
-// -----------------------------------------------------------------------------
-// Estoque
-// -----------------------------------------------------------------------------
-export interface InventoryRow {
-  id: string;
-  name: string;
-  slug: string;
-  is_active: boolean;
-  category_id: string | null;
-  category_name: string | null;
-  stock_available: number;
-  stock_reserved: number;
-  low_stock_threshold: number;
-  stock_status: StockStatus;
-  consumed_30d: number;
-  updated_at: string;
-}
-
-export async function listInventory(): Promise<InventoryRow[]> {
-  const { data, error, status } = await client().from("inventory_overview").select("*").order("name");
-  if (error) throw fromPostgrest(error, status);
-  return data as InventoryRow[];
-}
-
-export const adjustInventory = (productId: string, type: Extract<InventoryMovementType, "IN" | "OUT" | "ADJUSTMENT">, quantity: number, reason: string) =>
-  rpc<{ productId: string; stockAvailable: number; stockReserved: number }>("inventory_adjust", {
-    p_product_id: productId,
-    p_type: type,
-    p_quantity: quantity,
-    p_reason: reason,
-  });
-
-export interface MovementRow {
-  id: number;
-  type: InventoryMovementType;
-  quantity: number;
-  available_delta: number;
-  reserved_delta: number;
-  available_after: number;
-  reserved_after: number;
-  reason: string;
-  source: string;
-  created_at: string;
-  order_id: string | null;
-}
-
-export async function listMovements(productId: string, limit = 30): Promise<MovementRow[]> {
-  const { data, error, status } = await client()
-    .from("inventory_movements")
-    .select("id,type,quantity,available_delta,reserved_delta,available_after,reserved_after,reason,source,created_at,order_id")
-    .eq("product_id", productId)
-    .order("id", { ascending: false })
-    .limit(limit);
-  if (error) throw fromPostgrest(error, status);
-  return data as MovementRow[];
-}
-
-// -----------------------------------------------------------------------------
-// Clientes
-// -----------------------------------------------------------------------------
-export interface CustomerRow {
-  id: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  ordersCount: number;
-  totalSpentCents: number;
-  lastOrderAt: string | null;
-  anonymized: boolean;
-  createdAt: string;
-}
-
-export const listCustomers = (search: string, limit: number, offset: number) =>
-  rpc<{ total: number; items: CustomerRow[] }>("admin_list_customers", { p_search: search || null, p_limit: limit, p_offset: offset });
-
-export const anonymizeCustomer = (customerId: string) => rpc<void>("anonymize_customer", { p_customer_id: customerId });
 
 // -----------------------------------------------------------------------------
 // Configurações
@@ -395,39 +296,26 @@ export interface StoreSettingsRow {
   id: boolean;
   store_name: string;
   tagline: string;
-  legal_name: string;
-  whatsapp_number: string | null;
-  instagram_handle: string | null;
-  contact_email: string | null;
-  privacy_contact_email: string | null;
-  wix_site_url: string | null;
-  public_location_label: string;
-  pickup_address: string;
-  pickup_instructions: string;
-  origin_address: string;
-  origin_lat: number | null;
-  origin_lng: number | null;
+  whatsapp_phone: string | null;
+  notify_email: string | null;
+  instagram_url: string;
+  institutional_url: string;
   accepting_orders: boolean;
   pause_message: string;
-  pickup_enabled: boolean;
   delivery_enabled: boolean;
-  business_hours: Record<string, [string, string][]>;
-  delivery_hours: Record<string, [string, string][]>;
-  slot_interval_minutes: number;
-  min_lead_time_minutes: number;
+  delivery_fee_cents: number;
+  delivery_city: string;
+  pickup_enabled: boolean;
+  pickup_address: string;
+  open_weekdays: number[];
+  periods: DayPeriod[];
+  same_day_orders: boolean;
   max_days_ahead: number;
-  min_order_cents: number;
-  free_delivery_min_subtotal_cents: number | null;
-  delivery_pricing_mode: DeliveryPricingMode;
-  delivery_base_fee_cents: number;
-  delivery_per_km_cents: number;
-  delivery_max_distance_m: number;
-  new_order_ttl_minutes: number;
-  payment_ttl_minutes: number;
   payment_methods: PaymentMethod[];
   pix_key: string;
-  pix_holder_name: string;
-  content: Record<string, unknown>;
+  pix_holder: string;
+  min_order_cents: number;
+  email_customer_on_status: boolean;
   updated_at: string;
 }
 
@@ -439,42 +327,15 @@ export async function getSettings(): Promise<StoreSettingsRow> {
 
 export async function updateSettings(patch: Partial<StoreSettingsRow>): Promise<StoreSettingsRow> {
   const { id: _id, updated_at: _updatedAt, ...rest } = patch;
-  const { data, error, status } = await client().from("store_settings").update(rest).eq("id", true).select("*").single();
+  const { data, error, status } = await client().from("store_settings").update(rest).eq("id", true).select("*").maybeSingle();
   if (error) throw fromPostgrest(error, status);
+  // RLS: quem não é dono não altera (nenhuma linha volta).
+  if (!data) throw new ApiError(403, "FORBIDDEN", "Somente o dono ou a dona da loja pode alterar as configurações.");
   return data as StoreSettingsRow;
 }
 
-export interface DeliveryRuleRow {
-  id: string;
-  min_distance_m: number;
-  max_distance_m: number;
-  fee_cents: number;
-  is_active: boolean;
-}
-
-export async function listDeliveryRules(): Promise<DeliveryRuleRow[]> {
-  const { data, error, status } = await client().from("delivery_rules").select("id,min_distance_m,max_distance_m,fee_cents,is_active").order("min_distance_m");
-  if (error) throw fromPostgrest(error, status);
-  return data as DeliveryRuleRow[];
-}
-
-export async function saveDeliveryRule(id: string | null, input: Omit<DeliveryRuleRow, "id">): Promise<void> {
-  const { error, status } = id
-    ? await client().from("delivery_rules").update(input).eq("id", id)
-    : await client().from("delivery_rules").insert(input);
-  if (error) {
-    if (error.code === "23P01") throw new ApiError(409, "OVERLAP", "Esta faixa se sobrepõe a outra faixa ativa.");
-    throw fromPostgrest(error, status);
-  }
-}
-
-export async function deleteDeliveryRule(id: string): Promise<void> {
-  const { error, status } = await client().from("delivery_rules").delete().eq("id", id);
-  if (error) throw fromPostgrest(error, status);
-}
-
 // -----------------------------------------------------------------------------
-// Equipe (Edge Function admin-users, somente OWNER) e auditoria
+// Equipe (Edge Function admin-users, somente o dono)
 // -----------------------------------------------------------------------------
 export interface TeamMember {
   id: string;
@@ -487,33 +348,6 @@ export interface TeamMember {
   isSelf: boolean;
 }
 
-async function accessToken(): Promise<string> {
-  const { data } = await client().auth.getSession();
-  if (!data.session) throw new ApiError(401, "AUTH_REQUIRED", "Sua sessão expirou. Entre novamente.");
-  return data.session.access_token;
-}
-
 export async function teamAction<T>(body: Record<string, unknown>): Promise<T> {
   return callFunction<T>("admin-users", body, { accessToken: await accessToken() });
-}
-
-export interface AuditRow {
-  id: number;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  summary: string;
-  created_at: string;
-  actor_id: string | null;
-  actorName: string | null;
-}
-
-export async function listAudit(limit = 100): Promise<AuditRow[]> {
-  const [logs, profiles] = await Promise.all([
-    client().from("audit_logs").select("id,action,entity_type,entity_id,summary,created_at,actor_id").order("id", { ascending: false }).limit(limit),
-    client().from("profiles").select("id,full_name"),
-  ]);
-  if (logs.error) throw fromPostgrest(logs.error, logs.status);
-  const names = new Map((profiles.data ?? []).map((profile) => [profile.id as string, profile.full_name as string]));
-  return (logs.data ?? []).map((row) => ({ ...row, actorName: row.actor_id ? names.get(row.actor_id) ?? null : null })) as AuditRow[];
 }

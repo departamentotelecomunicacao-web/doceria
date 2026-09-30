@@ -5,33 +5,23 @@ import type { Product } from "@/types/domain";
 import { CookieIllustration } from "./CookieIllustration";
 
 interface Props {
-  product: Pick<Product, "id" | "name" | "images">;
+  product: Pick<Product, "id" | "name" | "image_path">;
   className?: string;
-  sizes?: string;
   priority?: boolean;
-  index?: number;
 }
 
-/** Foto do produto (Supabase Storage) com srcset, lazy loading e alt text. */
-export function ProductImage({ product, className, sizes = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw", priority, index = 0 }: Props) {
-  const image = product.images?.[index];
+/** Foto do produto (Supabase Storage) com lazy loading; sem foto, ilustração. */
+export function ProductImage({ product, className, priority }: Props) {
   const [failed, setFailed] = useState(false);
-  const full = productImageUrl(image?.storage_path);
-  const thumb = productImageUrl(image?.thumb_path);
+  const url = productImageUrl(product.image_path);
 
-  if (!image || !full || failed) {
+  if (!url || failed) {
     return <CookieIllustration seed={product.id} name={product.name} className={cn("h-full w-full", className)} />;
   }
-
-  const srcSet = thumb ? `${thumb} 600w, ${full} ${image.width ?? 1600}w` : undefined;
   return (
     <img
-      src={full}
-      srcSet={srcSet}
-      sizes={srcSet ? sizes : undefined}
-      alt={image.alt_text || product.name}
-      width={image.width ?? undefined}
-      height={image.height ?? undefined}
+      src={url}
+      alt={product.name}
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}

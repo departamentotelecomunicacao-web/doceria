@@ -21,7 +21,6 @@ export function useSettingsForm<K extends keyof StoreSettingsRow>(settings: Stor
     onSuccess: (data) => {
       queryClient.setQueryData(["admin", "settings"], data);
       void queryClient.invalidateQueries({ queryKey: ["store-config"] });
-      void queryClient.invalidateQueries({ queryKey: ["slots"] });
       toast.success("Configurações salvas", "A loja já usa os novos valores.");
     },
     onError: (error) => toast.error("Não foi possível salvar", friendlyMessage(error)),

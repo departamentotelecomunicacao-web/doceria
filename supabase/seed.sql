@@ -11,6 +11,7 @@ update public.store_settings
        whatsapp_phone = '+5528999990000',
        notify_email = 'pedidos@doceria.local',
        instagram_url = 'https://instagram.com/doceria.cookies',
+       institutional_url = 'https://www.exemplo.com.br',
        pickup_address = 'Rua de Exemplo, 100, Centro, Cachoeiro de Itapemirim - ES',
        delivery_fee_cents = 500,
        -- Todos os dias, para os testes não dependerem do dia da semana.

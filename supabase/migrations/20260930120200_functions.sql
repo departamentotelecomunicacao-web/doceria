@@ -122,6 +122,7 @@ as $$
     'tagline', s.tagline,
     'whatsappPhone', s.whatsapp_phone,
     'instagramUrl', nullif(s.instagram_url, ''),
+    'institutionalUrl', nullif(s.institutional_url, ''),
     'acceptingOrders', s.accepting_orders,
     'pauseMessage', nullif(s.pause_message, ''),
     'deliveryEnabled', s.delivery_enabled,

@@ -35,7 +35,6 @@ export default function Cart() {
   const minOrder = config.data?.minOrderCents ?? 0;
   const belowMinimum = reconciled.subtotalCents < minOrder;
   const paused = config.data ? !config.data.acceptingOrders : false;
-  const freeFrom = config.data?.deliveryEnabled ? config.data.freeDeliveryMinSubtotalCents : null;
 
   return (
     <div className="container-page py-10 sm:py-14">
@@ -45,7 +44,7 @@ export default function Cart() {
           {reconciled.items.map((item) => (
             <li key={item.product.id} className="flex gap-4 py-5" data-testid="cart-line" data-product-slug={item.product.slug}>
               <Link to={`/produto/${item.product.slug}`} className="size-24 shrink-0 overflow-hidden rounded-2xl bg-cream-100 sm:size-28">
-                <ProductImage product={item.product} sizes="112px" />
+                <ProductImage product={item.product} />
               </Link>
               <div className="flex flex-1 flex-col gap-2">
                 <div className="flex items-start justify-between gap-3">
@@ -88,16 +87,16 @@ export default function Cart() {
             </div>
             <div className="flex justify-between">
               <dt className="text-cocoa-600">Entrega</dt>
-              <dd className="text-cocoa-600">calculada no checkout</dd>
+              <dd className="text-cocoa-600">
+                {config.data?.deliveryEnabled ? formatBRL(config.data.deliveryFeeCents) : "indisponível"}
+                {config.data?.pickupEnabled && " · retirada grátis"}
+              </dd>
             </div>
             <div className="flex justify-between border-t border-cream-200 pt-3 text-base">
               <dt className="font-semibold">Total parcial</dt>
               <dd className="font-bold tabular-nums">{formatBRL(reconciled.subtotalCents)}</dd>
             </div>
           </dl>
-          {freeFrom && reconciled.subtotalCents < freeFrom && (
-            <p className="text-sm text-cocoa-600">Faltam {formatBRL(freeFrom - reconciled.subtotalCents)} para entrega grátis.</p>
-          )}
           {belowMinimum && (
             <Notice tone="warning" title={`Pedido mínimo de ${formatBRL(minOrder)}`}>
               Adicione mais {formatBRL(minOrder - reconciled.subtotalCents)} para finalizar.

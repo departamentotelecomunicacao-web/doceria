@@ -58,19 +58,19 @@ jobs:
       - name: Subir Supabase local
         run: npx supabase start -x studio,imgproxy,vector,logflare,supavisor,postgres-meta,mailpit
 
-      - name: Variáveis locais (chaves do supabase status + stub de rotas)
+      - name: Variáveis locais (chaves do supabase status + stub de e-mail)
         run: npm run env:test
 
-      # O stub só responde GET em /__stats; esperas com HEAD nunca terminam.
-      - name: Stub da Google Routes API
+      # O stub só responde GET em /__emails; esperas com HEAD nunca terminam.
+      - name: Stub do EmailJS
         timeout-minutes: 2
         run: |
-          nohup node tests/stubs/google-routes-stub.mjs > stub.log 2>&1 &
+          nohup node tests/stubs/email-stub.mjs > stub.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:54400/__stats > /dev/null && exit 0
+            curl -sf http://127.0.0.1:54401/__emails > /dev/null && exit 0
             sleep 1
           done
-          echo "Stub da Routes API não respondeu"; cat stub.log; exit 1
+          echo "Stub do EmailJS não respondeu"; cat stub.log; exit 1
 
       - name: Servir Edge Functions
         timeout-minutes: 5

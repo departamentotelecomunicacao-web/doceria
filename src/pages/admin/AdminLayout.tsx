@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, ClipboardList, Cookie, LayoutDashboard, LogOut, Menu, Settings, Users, Wifi, WifiOff, X } from "lucide-react";
+import { ClipboardList, Cookie, LogOut, Menu, Settings, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { ROLE_LABEL, useAdminAuth } from "@/admin/auth";
-import { countActiveOrders } from "@/api/admin";
 import { cn } from "@/components/ui/cn";
 import { LoadingBlock } from "@/components/ui/States";
 import { useToast } from "@/components/ui/Toast";
 import { ApiError } from "@/lib/errors";
+import { fromPostgrest } from "@/lib/errors";
 import { getAdminClient } from "@/lib/supabase";
 import type { AppRole } from "@/types/domain";
 
@@ -20,13 +20,44 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: "/admin/dashboard", label: "Início", icon: LayoutDashboard, minRole: "OPERATOR", mobile: true },
-  { to: "/admin/pedidos", label: "Pedidos", icon: ClipboardList, minRole: "OPERATOR", mobile: true },
-  { to: "/admin/estoque", label: "Estoque", icon: Boxes, minRole: "OPERATOR", mobile: true },
-  { to: "/admin/produtos", label: "Produtos", icon: Cookie, minRole: "OPERATOR", mobile: true },
-  { to: "/admin/clientes", label: "Clientes", icon: Users, minRole: "ADMIN" },
-  { to: "/admin/configuracoes", label: "Configurações", icon: Settings, minRole: "ADMIN" },
+  { to: "/admin/pedidos", label: "Pedidos", icon: ClipboardList, minRole: "STAFF", mobile: true },
+  { to: "/admin/produtos", label: "Produtos", icon: Cookie, minRole: "STAFF", mobile: true },
+  { to: "/admin/configuracoes", label: "Configurações", icon: Settings, minRole: "OWNER", mobile: true },
 ];
+
+async function countNewOrders(): Promise<{ pending: number }> {
+  const { count, error, status } = await getAdminClient()
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "RECEIVED");
+  if (error) throw fromPostgrest(error, status);
+  return { pending: count ?? 0 };
+}
+
+/** Aviso sonoro curto para pedido novo (ignorado se o navegador bloquear). */
+function playChime() {
+  try {
+    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    [880, 1320].forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const start = ctx.currentTime + index * 0.18;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+    window.setTimeout(() => void ctx.close(), 1000);
+  } catch {
+    // Sem som: o aviso visual continua.
+  }
+}
 
 type RealtimeState = "connecting" | "live" | "offline";
 
@@ -41,7 +72,7 @@ function useOrderFeed(enabled: boolean) {
 
   const pending = useQuery({
     queryKey: ["admin", "pending-count"],
-    queryFn: countActiveOrders,
+    queryFn: countNewOrders,
     enabled,
     refetchInterval: realtime === "live" ? 60_000 : 15_000,
   });
@@ -52,7 +83,8 @@ function useOrderFeed(enabled: boolean) {
     const current = pending.data?.pending;
     if (current === undefined) return;
     if (lastPending.current !== null && current > lastPending.current && realtime !== "live") {
-      toast.success("Novo pedido recebido", "Abra a central de pedidos para confirmar.");
+      playChime();
+      toast.success("Novo pedido recebido", "Abra os pedidos para confirmar.");
       void queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
     }
     lastPending.current = current;
@@ -66,16 +98,14 @@ function useOrderFeed(enabled: boolean) {
       .channel("admin-orders")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
         const code = (payload.new as { code?: string }).code;
-        toast.success(`Novo pedido${code ? ` #${code}` : ""}`, "Abra a central de pedidos para confirmar.");
+        playChime();
+        toast.success(`Novo pedido${code ? ` #${code}` : ""}`, "Abra os pedidos para confirmar.");
         void queryClient.invalidateQueries({ queryKey: ["admin"] });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, () => {
         void queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
         void queryClient.invalidateQueries({ queryKey: ["admin", "order"] });
         void queryClient.invalidateQueries({ queryKey: ["admin", "pending-count"] });
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "products" }, () => {
-        void queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] });
       })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
@@ -157,7 +187,7 @@ export default function AdminLayout() {
       {/* Barra lateral (desktop) */}
       <aside className="hidden border-r border-cream-200 bg-cream-50 lg:flex lg:h-dvh lg:flex-col lg:sticky lg:top-0">
         <div className="px-5 py-6">
-          <Link to="/admin/dashboard" className="font-display text-xl">Painel</Link>
+          <Link to="/admin/pedidos" className="font-display text-xl">Painel</Link>
           <div className="mt-1">{connection}</div>
         </div>
         <nav className="flex-1 space-y-1 px-3" aria-label="Painel">
@@ -214,7 +244,7 @@ export default function AdminLayout() {
       </main>
 
       {/* Navegação inferior (celular) */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-cream-200 bg-cream-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Atalhos">
+      <nav className={cn("fixed inset-x-0 bottom-0 z-30 grid border-t border-cream-200 bg-cream-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden", items.filter((item) => item.mobile).length === 3 ? "grid-cols-3" : "grid-cols-2")} aria-label="Atalhos">
         {items.filter((item) => item.mobile).map((item) => (
           <NavLink
             key={item.to}

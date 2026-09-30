@@ -22,13 +22,9 @@ const staticRoutes = [
   "privacidade",
   "admin",
   "admin/login",
-  "admin/dashboard",
   "admin/pedidos",
-  "admin/pedidos/novo",
   "admin/produtos",
   "admin/produtos/novo",
-  "admin/estoque",
-  "admin/clientes",
   "admin/configuracoes",
 ];
 

@@ -1,39 +1,45 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Banknote, CreditCard, Loader2, MapPin, MessageCircle, Package, QrCode, ShieldCheck, Truck } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Banknote, Bike, CreditCard, QrCode, ShieldCheck, Store } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { submitOrder } from "@/api/store";
 import { ProductImage } from "@/components/store/ProductImage";
-import { Button, ButtonLink, buttonClasses } from "@/components/ui/Button";
-import { ChoiceCard, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { Button, ButtonLink } from "@/components/ui/Button";
+import { cn } from "@/components/ui/cn";
+import { ChoiceCard, Field, Input, Textarea } from "@/components/ui/Field";
 import { EmptyState, ErrorState, LoadingBlock, Notice } from "@/components/ui/States";
-import { useCepLookup } from "@/hooks/useCepLookup";
-import { useDeliveryQuote } from "@/hooks/useDeliveryQuote";
-import { useSlots, useStoreConfig } from "@/hooks/useStore";
-import { centsToValue, track } from "@/lib/analytics";
-import { formatSlot } from "@/lib/datetime";
+import { useStoreConfig } from "@/hooks/useStore";
+import { formatDateChip } from "@/lib/datetime";
 import { ApiError, friendlyMessage } from "@/lib/errors";
 import { clearIdempotencyKey, getIdempotencyKey } from "@/lib/idempotency";
-import { PAYMENT_METHOD_LABEL } from "@/lib/labels";
-import { formatBRL, formatDistanceKm, parseBRLToCents } from "@/lib/money";
+import { PAYMENT_METHOD_LABEL, PERIOD_LABEL } from "@/lib/labels";
+import { formatBRL, parseBRLToCents } from "@/lib/money";
 import { useDocumentMeta } from "@/lib/seo";
 import { readJson, removeStorage, writeJson } from "@/lib/storage";
-import { buildDeliveryHelpMessage, formatAddressLine, whatsappLink } from "@/lib/whatsapp";
 import { useCart } from "@/store/cart";
 import { cartFingerprint } from "@/store/cartLogic";
 import { useCartDetails } from "@/store/useCartDetails";
-import type { FulfillmentType, PaymentMethod } from "@/types/domain";
-import { parseOrderRequest, type AddressInput, type FieldErrors } from "@shared/validation.ts";
+import type { DayPeriod, FulfillmentType, PaymentMethod } from "@/types/domain";
+import { parseOrderRequest, type FieldErrors } from "@shared/validation.ts";
 
-const DRAFT_KEY = "doceria:checkout-draft:v1";
+const DRAFT_KEY = "doceria:checkout-draft:v2";
+
+interface AddressForm {
+  street: string;
+  number: string;
+  district: string;
+  complement: string;
+  reference: string;
+}
 
 interface CheckoutForm {
   name: string;
   phone: string;
   email: string;
   fulfillment: FulfillmentType | null;
-  address: AddressInput;
-  slot: string;
+  address: AddressForm;
+  date: string;
+  period: DayPeriod | null;
   paymentMethod: PaymentMethod | null;
   cashChange: string;
   notes: string;
@@ -44,8 +50,9 @@ const EMPTY_FORM: CheckoutForm = {
   phone: "",
   email: "",
   fulfillment: null,
-  address: { cep: "", street: "", number: "", complement: "", neighborhood: "", city: "Cachoeiro de Itapemirim", state: "ES", reference: "" },
-  slot: "",
+  address: { street: "", number: "", district: "", complement: "", reference: "" },
+  date: "",
+  period: null,
   paymentMethod: null,
   cashChange: "",
   notes: "",
@@ -58,20 +65,38 @@ const PAYMENT_ICONS: Record<PaymentMethod, ReactNode> = {
 };
 
 const PAYMENT_HINT: Record<PaymentMethod, string> = {
-  PIX: "Você recebe a chave PIX após confirmar. O pedido é confirmado após a conferência do pagamento.",
-  CASH: "Pague no momento da retirada ou entrega.",
-  CARD: "Débito ou crédito na maquininha, na retirada ou entrega.",
+  PIX: "A chave PIX aparece depois de confirmar e também vai no seu e-mail.",
+  CASH: "Pague na entrega ou na retirada.",
+  CARD: "Débito ou crédito na maquininha, na entrega ou na retirada.",
 };
 
-function Section({ number, title, children, id }: { number: number; title: string; children: ReactNode; id?: string }) {
+function Section({ number, title, children }: { number: number; title: string; children: ReactNode }) {
   return (
-    <section className="card space-y-5 p-5 sm:p-6" aria-labelledby={`${id ?? `step-${number}`}-title`}>
-      <h2 id={`${id ?? `step-${number}`}-title`} className="flex items-center gap-3 font-display text-xl">
+    <section className="card min-w-0 space-y-5 p-5 sm:p-6" aria-labelledby={`step-${number}-title`}>
+      <h2 id={`step-${number}-title`} className="flex items-center gap-3 font-display text-xl">
         <span className="grid size-8 place-items-center rounded-full bg-cocoa-900 font-sans text-sm font-bold text-cream-50">{number}</span>
         {title}
       </h2>
       {children}
     </section>
+  );
+}
+
+function Chip({ selected, onClick, children, testId }: { selected: boolean; onClick: () => void; children: ReactNode; testId?: string }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      data-testid={testId}
+      className={cn(
+        "flex min-w-[4.5rem] shrink-0 flex-col items-center rounded-2xl border px-3 py-2 text-sm font-semibold transition-colors",
+        selected ? "border-cocoa-900 bg-cocoa-900 text-cream-50" : "border-cream-300 bg-white text-cocoa-800 hover:border-cocoa-400",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -92,86 +117,27 @@ export default function Checkout() {
   const submittedRef = useRef(false);
 
   useEffect(() => {
-    const { ...draft } = form;
-    writeJson(DRAFT_KEY, draft, "session");
+    writeJson(DRAFT_KEY, form, "session");
   }, [form]);
 
+  const clearError = (prefix: string) =>
+    setErrors((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(next)) if (key.includes(prefix)) delete next[key];
+      return next;
+    });
   const update = <K extends keyof CheckoutForm>(key: K, value: CheckoutForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
-    setErrors((current) => {
-      const next = { ...current };
-      for (const errorKey of Object.keys(next)) {
-        if (errorKey.includes(String(key))) delete next[errorKey];
-      }
-      return next;
-    });
+    clearError(String(key));
   };
-  const updateAddress = (key: keyof AddressInput, value: string) => {
+  const updateAddress = (key: keyof AddressForm, value: string) => {
     setForm((current) => ({ ...current, address: { ...current.address, [key]: value } }));
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[`fulfillment.address.${key}`];
-      return next;
-    });
+    clearError(`address.${key}`);
   };
-
-  // Opções vindas das configurações da loja
-  const cfg = config.data;
-  const fulfillment: FulfillmentType | null = form.fulfillment
-    ?? (cfg ? (cfg.pickupEnabled ? "PICKUP" : cfg.deliveryEnabled ? "DELIVERY" : null) : null);
-  const paymentMethod: PaymentMethod | null = form.paymentMethod && cfg?.paymentMethods.includes(form.paymentMethod)
-    ? form.paymentMethod
-    : cfg?.paymentMethods[0] ?? null;
-
-  // Autopreenchimento por CEP
-  const cepLookup = useCepLookup(form.address.cep);
-  const autofilledCep = useRef<string | null>(null);
-  useEffect(() => {
-    if (!cepLookup.data || autofilledCep.current === cepLookup.cep) return;
-    autofilledCep.current = cepLookup.cep;
-    const data = cepLookup.data;
-    setForm((current) => ({
-      ...current,
-      address: {
-        ...current.address,
-        street: data.street || current.address.street,
-        neighborhood: data.neighborhood || current.address.neighborhood,
-        city: data.city || current.address.city,
-        state: data.state || current.address.state,
-      },
-    }));
-  }, [cepLookup]);
-
-  const subtotal = reconciled?.subtotalCents ?? 0;
-  const isDelivery = fulfillment === "DELIVERY";
-  const { state: quoteState, refresh: refreshQuote, addressComplete } = useDeliveryQuote(form.address, subtotal, isDelivery);
-  const slots = useSlots(fulfillment ?? "PICKUP", Boolean(fulfillment));
-
-  const slotList = useMemo(() => slots.data ?? [], [slots.data]);
-  const selectedSlot = slotList.find((slot) => slot.start === form.slot) ?? slotList[0];
-
-  const quote = quoteState.status === "ready" ? quoteState.quote : null;
-  const deliveryFee = isDelivery ? (quote?.available ? quote.feeCents ?? 0 : null) : 0;
-  const total = deliveryFee === null ? null : subtotal + deliveryFee;
-
-  // Evento begin_checkout uma vez por visita ao checkout com itens.
-  const trackedBegin = useRef(false);
-  useEffect(() => {
-    if (trackedBegin.current || !reconciled || reconciled.items.length === 0) return;
-    trackedBegin.current = true;
-    track("begin_checkout", {
-      value: centsToValue(reconciled.subtotalCents),
-      items: reconciled.items.map((item) => ({
-        item_id: item.product.id,
-        item_name: item.product.name,
-        price: centsToValue(item.product.price_cents),
-        quantity: item.quantity,
-      })),
-    });
-  }, [reconciled]);
 
   const mutation = useMutation({ mutationFn: submitOrder });
 
+  const cfg = config.data;
   if (catalog.isError || config.isError) {
     return <ErrorState className="container-page" error={catalog.error ?? config.error} onRetry={() => { catalog.refetch(); config.refetch(); }} title="Não foi possível carregar o checkout" />;
   }
@@ -187,41 +153,39 @@ export default function Checkout() {
     );
   }
 
-  const addressLine = formatAddressLine(form.address);
-  const whatsappHelp = whatsappLink(
-    cfg.whatsappNumber,
-    buildDeliveryHelpMessage({
-      items: reconciled.items.map((item) => ({ name: item.product.name, quantity: item.quantity })),
-      addressLine,
-    }),
-  );
+  // Escolhas válidas conforme as configurações atuais da loja.
+  const fulfillment: FulfillmentType | null =
+    form.fulfillment === "DELIVERY" && cfg.deliveryEnabled ? "DELIVERY"
+      : form.fulfillment === "PICKUP" && cfg.pickupEnabled ? "PICKUP"
+        : cfg.deliveryEnabled ? "DELIVERY" : cfg.pickupEnabled ? "PICKUP" : null;
+  const isDelivery = fulfillment === "DELIVERY";
+  const date = cfg.availableDates.includes(form.date) ? form.date : cfg.availableDates[0] ?? "";
+  const period: DayPeriod | null = form.period && cfg.periods.includes(form.period) ? form.period : cfg.periods[0] ?? null;
+  const paymentMethod: PaymentMethod | null = form.paymentMethod && cfg.paymentMethods.includes(form.paymentMethod)
+    ? form.paymentMethod
+    : cfg.paymentMethods[0] ?? null;
+
+  const subtotal = reconciled.subtotalCents;
+  const deliveryFee = isDelivery ? cfg.deliveryFeeCents : 0;
+  const total = subtotal + deliveryFee;
   const belowMinimum = subtotal < cfg.minOrderCents;
-  const deliveryBlocked = isDelivery && !(quote && quote.available);
 
   const blockingReason = !cfg.acceptingOrders
     ? cfg.pauseMessage || "No momento não estamos recebendo pedidos."
     : !fulfillment
-      ? "Retirada e entrega estão indisponíveis no momento."
+      ? "Entrega e retirada estão indisponíveis no momento."
       : belowMinimum
         ? `Pedido mínimo de ${formatBRL(cfg.minOrderCents)}.`
-        : slots.isSuccess && slotList.length === 0
-          ? "Não há horários disponíveis nos próximos dias."
-          : isDelivery && !addressComplete
-            ? "Informe o endereço completo para calcular a entrega."
-            : isDelivery && quoteState.status === "loading"
-              ? "Calculando a entrega…"
-              : deliveryBlocked
-                ? "Entrega indisponível para este endereço."
-                : null;
+        : !date
+          ? "Não há datas disponíveis no momento. Fale com a gente pelo WhatsApp."
+          : null;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (mutation.isPending || blockingReason || total === null || !selectedSlot || !fulfillment || !paymentMethod) return;
+    if (mutation.isPending || blockingReason || !fulfillment || !paymentMethod || !period) return;
     setServerNotice(null);
 
-    const cashChangeForCents = paymentMethod === "CASH" && form.cashChange.trim()
-      ? parseBRLToCents(form.cashChange)
-      : null;
+    const cashChangeForCents = paymentMethod === "CASH" && form.cashChange.trim() ? parseBRLToCents(form.cashChange) : null;
     if (paymentMethod === "CASH" && form.cashChange.trim() && (cashChangeForCents === null || cashChangeForCents < total)) {
       setErrors({ cashChangeForCents: `Informe um valor maior que ${formatBRL(total)} ou deixe em branco.` });
       return;
@@ -229,50 +193,30 @@ export default function Checkout() {
 
     const draftPayload = {
       customer: { name: form.name, phone: form.phone, email: form.email || null },
-      fulfillment: {
-        type: fulfillment,
-        scheduledFor: selectedSlot.start,
-        ...(isDelivery ? { address: form.address } : {}),
-      },
+      fulfillment: { type: fulfillment, date, period, ...(isDelivery ? { address: form.address } : {}) },
       items: reconciled.items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
       paymentMethod,
       cashChangeForCents,
       notes: form.notes || null,
       expectedTotalCents: total,
     };
-    const idempotencyKey = getIdempotencyKey(
-      JSON.stringify([cartFingerprint(cart.lines), draftPayload]),
-    );
+    const idempotencyKey = getIdempotencyKey(JSON.stringify([cartFingerprint(cart.lines), draftPayload]));
     const parsed = parseOrderRequest({ idempotencyKey, ...draftPayload });
     if (!parsed.ok) {
       setErrors(parsed.errors);
-      document.querySelector("[aria-invalid='true']")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestAnimationFrame(() =>
+        document.querySelector("[aria-invalid='true']")?.scrollIntoView({ behavior: "smooth", block: "center" }));
       return;
     }
 
     try {
       const result = await mutation.mutateAsync(parsed.value);
       submittedRef.current = true;
-      const { order } = result;
-      writeJson(`doceria:order-extra:${order.publicToken}`, {
-        addressLine: isDelivery ? addressLine : null,
-        scheduleLabel: formatSlot(selectedSlot),
-      }, "session");
-      track("order_created", {
-        transaction_id: order.code,
-        value: centsToValue(order.totalCents),
-        items: reconciled.items.map((item) => ({
-          item_id: item.product.id,
-          item_name: item.product.name,
-          price: centsToValue(item.product.price_cents),
-          quantity: item.quantity,
-        })),
-      }, { dedupeKey: order.code });
       cart.clear();
       clearIdempotencyKey();
       removeStorage(DRAFT_KEY, "session");
       queryClient.invalidateQueries({ queryKey: ["catalog"] });
-      navigate(`/pedido/${order.publicToken}?novo=1`, { replace: true });
+      navigate(`/pedido/${result.order.publicToken}?novo=1`, { replace: true });
     } catch (error) {
       handleOrderError(error);
     }
@@ -280,11 +224,10 @@ export default function Checkout() {
 
   const handleOrderError = (error: unknown) => {
     const apiError = error instanceof ApiError ? error : null;
-    const code = apiError?.code ?? "INTERNAL_ERROR";
-    switch (code) {
+    switch (apiError?.code ?? "INTERNAL_ERROR") {
       case "PRICE_CHANGED": {
         queryClient.invalidateQueries({ queryKey: ["catalog"] });
-        refreshQuote();
+        queryClient.invalidateQueries({ queryKey: ["store-config"] });
         const newTotal = apiError?.data?.totalCents;
         setServerNotice({
           tone: "warning",
@@ -297,14 +240,13 @@ export default function Checkout() {
       }
       case "OUT_OF_STOCK":
       case "PRODUCT_UNAVAILABLE":
-      case "QUANTITY_LIMIT":
         queryClient.invalidateQueries({ queryKey: ["catalog"] });
-        setServerNotice({ tone: "warning", title: "Estoque atualizado", body: friendlyMessage(apiError) + " Revise o resumo e confirme novamente." });
+        setServerNotice({ tone: "warning", title: "Disponibilidade atualizada", body: `${friendlyMessage(apiError)} Revise o resumo e confirme novamente.` });
         break;
-      case "SLOT_UNAVAILABLE":
-        queryClient.invalidateQueries({ queryKey: ["slots"] });
-        update("slot", "");
-        setServerNotice({ tone: "warning", title: "Horário indisponível", body: friendlyMessage(apiError) });
+      case "DATE_UNAVAILABLE":
+        queryClient.invalidateQueries({ queryKey: ["store-config"] });
+        update("date", "");
+        setServerNotice({ tone: "warning", title: "Data indisponível", body: friendlyMessage(apiError) });
         break;
       case "IDEMPOTENCY_CONFLICT":
         clearIdempotencyKey();
@@ -314,28 +256,18 @@ export default function Checkout() {
       case "INVALID_CUSTOMER":
       case "INVALID_ADDRESS": {
         const fields = (apiError?.data?.fields ?? {}) as FieldErrors;
-        const field = apiError?.data?.field as string | undefined;
-        setErrors(Object.keys(fields).length ? fields : field ? { [`fulfillment.address.${field}`]: friendlyMessage(apiError) } : {});
+        setErrors(fields);
         setServerNotice({ tone: "danger", title: "Confira os dados", body: friendlyMessage(apiError) });
         break;
       }
-      case "ROUTING_UNAVAILABLE":
-      case "DELIVERY_NOT_CONFIGURED":
-      case "ADDRESS_NOT_FOUND":
-      case "ADDRESS_IMPRECISE":
-      case "DELIVERY_UNAVAILABLE":
-      case "DELIVERY_QUOTE_INVALID":
-        refreshQuote();
-        setServerNotice({ tone: "danger", title: "Entrega não confirmada", body: friendlyMessage(apiError) });
-        break;
       default:
-        // Rede, timeout, limite de tentativas, loja pausada, pedido mínimo...
+        // Rede, timeout, limite de tentativas, loja pausada...
         // Reenviar é seguro: a chave de idempotência é a mesma.
         setServerNotice({ tone: "danger", title: "Pedido não enviado", body: friendlyMessage(apiError) });
     }
   };
 
-  const summaryItems = reconciled.items;
+  const e = (key: string) => errors[key];
 
   return (
     <div className="container-page py-8 sm:py-12">
@@ -345,179 +277,122 @@ export default function Checkout() {
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="grid gap-8 lg:grid-cols-[1fr_24rem]" data-testid="checkout-form">
-        <div className="space-y-6">
-          {/* 1. Dados --------------------------------------------------------- */}
+        <div className="min-w-0 space-y-6">
+          {/* 1. Dados ----------------------------------------------------------- */}
           <Section number={1} title="Seus dados">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Nome" error={errors["customer.name"]} className="sm:col-span-2">
+              <Field label="Nome" error={e("customer.name")} className="sm:col-span-2">
                 {({ id, describedBy }) => (
-                  <Input id={id} aria-describedby={describedBy} autoComplete="name" value={form.name} error={errors["customer.name"]}
-                    onChange={(e) => update("name", e.target.value)} maxLength={120} required />
+                  <Input id={id} aria-describedby={describedBy} autoComplete="name" value={form.name} error={e("customer.name")}
+                    onChange={(ev) => update("name", ev.target.value)} maxLength={120} required />
                 )}
               </Field>
-              <Field label="WhatsApp / telefone" error={errors["customer.phone"]} hint="Usamos para falar sobre o pedido.">
+              <Field label="WhatsApp" error={e("customer.phone")} hint="Para falarmos sobre o pedido.">
                 {({ id, describedBy }) => (
                   <Input id={id} aria-describedby={describedBy} type="tel" inputMode="tel" autoComplete="tel-national" placeholder="(28) 99999-9999"
-                    value={form.phone} error={errors["customer.phone"]} onChange={(e) => update("phone", e.target.value)} maxLength={20} required />
+                    value={form.phone} error={e("customer.phone")} onChange={(ev) => update("phone", ev.target.value)} maxLength={20} required />
                 )}
               </Field>
-              <Field label="E-mail" optional error={errors["customer.email"]}>
+              <Field label="E-mail" optional error={e("customer.email")} hint="Enviamos a confirmação do pedido.">
                 {({ id, describedBy }) => (
-                  <Input id={id} aria-describedby={describedBy} type="email" autoComplete="email" value={form.email} error={errors["customer.email"]}
-                    onChange={(e) => update("email", e.target.value)} maxLength={254} />
+                  <Input id={id} aria-describedby={describedBy} type="email" autoComplete="email" value={form.email} error={e("customer.email")}
+                    onChange={(ev) => update("email", ev.target.value)} maxLength={254} />
                 )}
               </Field>
             </div>
           </Section>
 
-          {/* 2. Recebimento ---------------------------------------------------- */}
-          <Section number={2} title="Como quer receber">
+          {/* 2. Entrega ou retirada ----------------------------------------------- */}
+          <Section number={2} title="Entrega ou retirada">
             <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Forma de recebimento">
-              <ChoiceCard
-                name="fulfillment" value="PICKUP" checked={fulfillment === "PICKUP"} disabled={!cfg.pickupEnabled}
-                onChange={() => update("fulfillment", "PICKUP")}
-                icon={<Package className="size-5" />} title="Retirada"
-                description={cfg.pickupEnabled ? `Grátis. ${cfg.publicLocationLabel}` : "Indisponível no momento"}
-              />
               <ChoiceCard
                 name="fulfillment" value="DELIVERY" checked={fulfillment === "DELIVERY"} disabled={!cfg.deliveryEnabled}
                 onChange={() => update("fulfillment", "DELIVERY")}
-                icon={<Truck className="size-5" />} title="Entrega"
-                description={cfg.deliveryEnabled ? "Taxa pela distância real da rota" : "Indisponível no momento"}
+                icon={<Bike className="size-5" />} title={`Entrega · ${formatBRL(cfg.deliveryFeeCents)}`}
+                description={cfg.deliveryEnabled ? cfg.deliveryCity : "Indisponível no momento"}
+              />
+              <ChoiceCard
+                name="fulfillment" value="PICKUP" checked={fulfillment === "PICKUP"} disabled={!cfg.pickupEnabled}
+                onChange={() => update("fulfillment", "PICKUP")}
+                icon={<Store className="size-5" />} title="Retirada · grátis"
+                description={cfg.pickupEnabled ? cfg.pickupAddress ?? "Endereço informado na confirmação" : "Indisponível no momento"}
               />
             </div>
-            {fulfillment === "PICKUP" && (
-              <p className="text-sm text-cocoa-600">O endereço exato de retirada aparece na página do pedido após a confirmação.</p>
-            )}
-          </Section>
 
-          {/* 3. Endereço ------------------------------------------------------- */}
-          {isDelivery && (
-            <Section number={3} title="Endereço de entrega">
-              <div className="grid gap-4 sm:grid-cols-6">
-                <Field label="CEP" error={errors["fulfillment.address.cep"]} className="sm:col-span-2"
-                  hint={cepLookup.loading ? "Buscando endereço…" : undefined}>
-                  {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} inputMode="numeric" autoComplete="postal-code" placeholder="29300-000"
-                      value={form.address.cep} error={errors["fulfillment.address.cep"]} maxLength={9}
-                      onChange={(e) => updateAddress("cep", e.target.value)} />
-                  )}
-                </Field>
-                <Field label="Rua" error={errors["fulfillment.address.street"]} className="sm:col-span-4">
+            {isDelivery && (
+              <div className="grid gap-4 border-t border-cream-200 pt-5 sm:grid-cols-6">
+                <Field label="Rua" error={e("fulfillment.address.street")} className="sm:col-span-4">
                   {({ id, describedBy }) => (
                     <Input id={id} aria-describedby={describedBy} autoComplete="address-line1" value={form.address.street}
-                      error={errors["fulfillment.address.street"]} onChange={(e) => updateAddress("street", e.target.value)} maxLength={120} />
+                      error={e("fulfillment.address.street")} onChange={(ev) => updateAddress("street", ev.target.value)} maxLength={120} />
                   )}
                 </Field>
-                <Field label="Número" error={errors["fulfillment.address.number"]} className="sm:col-span-2">
+                <Field label="Número" error={e("fulfillment.address.number")} className="sm:col-span-2">
                   {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} inputMode="text" value={form.address.number}
-                      error={errors["fulfillment.address.number"]} onChange={(e) => updateAddress("number", e.target.value)} maxLength={12} />
+                    <Input id={id} aria-describedby={describedBy} value={form.address.number}
+                      error={e("fulfillment.address.number")} onChange={(ev) => updateAddress("number", ev.target.value)} maxLength={12} />
                   )}
                 </Field>
-                <Field label="Complemento" optional error={errors["fulfillment.address.complement"]} className="sm:col-span-4">
+                <Field label="Bairro" error={e("fulfillment.address.district")} className="sm:col-span-3">
+                  {({ id, describedBy }) => (
+                    <Input id={id} aria-describedby={describedBy} value={form.address.district}
+                      error={e("fulfillment.address.district")} onChange={(ev) => updateAddress("district", ev.target.value)} maxLength={80} />
+                  )}
+                </Field>
+                <Field label="Complemento" optional className="sm:col-span-3">
                   {({ id, describedBy }) => (
                     <Input id={id} aria-describedby={describedBy} autoComplete="address-line2" placeholder="Apto, bloco, casa"
-                      value={form.address.complement ?? ""} onChange={(e) => updateAddress("complement", e.target.value)} maxLength={80} />
-                  )}
-                </Field>
-                <Field label="Bairro" error={errors["fulfillment.address.neighborhood"]} className="sm:col-span-3">
-                  {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} value={form.address.neighborhood}
-                      error={errors["fulfillment.address.neighborhood"]} onChange={(e) => updateAddress("neighborhood", e.target.value)} maxLength={80} />
-                  )}
-                </Field>
-                <Field label="Cidade" error={errors["fulfillment.address.city"]} className="sm:col-span-2">
-                  {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} autoComplete="address-level2" value={form.address.city}
-                      error={errors["fulfillment.address.city"]} onChange={(e) => updateAddress("city", e.target.value)} maxLength={80} />
-                  )}
-                </Field>
-                <Field label="UF" error={errors["fulfillment.address.state"]} className="sm:col-span-1">
-                  {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} autoComplete="address-level1" value={form.address.state}
-                      error={errors["fulfillment.address.state"]} onChange={(e) => updateAddress("state", e.target.value.toUpperCase())} maxLength={2} />
+                      value={form.address.complement} onChange={(ev) => updateAddress("complement", ev.target.value)} maxLength={80} />
                   )}
                 </Field>
                 <Field label="Ponto de referência" optional className="sm:col-span-6">
                   {({ id, describedBy }) => (
-                    <Input id={id} aria-describedby={describedBy} value={form.address.reference ?? ""}
-                      onChange={(e) => updateAddress("reference", e.target.value)} maxLength={160} />
+                    <Input id={id} aria-describedby={describedBy} value={form.address.reference}
+                      onChange={(ev) => updateAddress("reference", ev.target.value)} maxLength={160} />
                   )}
                 </Field>
+                <p className="text-sm text-cocoa-600 sm:col-span-6">Cidade: {cfg.deliveryCity}</p>
               </div>
-
-              <div aria-live="polite" data-testid="delivery-quote">
-                {!addressComplete && (
-                  <p className="flex items-center gap-2 text-sm text-cocoa-600">
-                    <MapPin className="size-4" aria-hidden /> Preencha o endereço completo para calcular a entrega.
-                  </p>
-                )}
-                {addressComplete && quoteState.status === "loading" && (
-                  <p className="flex items-center gap-2 text-sm text-cocoa-700">
-                    <Loader2 className="size-4 animate-spin" aria-hidden /> Calculando a entrega pela rota…
-                  </p>
-                )}
-                {quote && quote.available && (
-                  <Notice tone="success" title={quote.freeDeliveryApplied ? "Entrega grátis!" : `Entrega: ${formatBRL(quote.feeCents)}`}>
-                    {formatDistanceKm(quote.distanceMeters)} de rota
-                    {quote.durationMinutes ? ` · cerca de ${quote.durationMinutes} min de trajeto` : ""}
-                  </Notice>
-                )}
-                {quote && !quote.available && (
-                  <Notice tone="warning" title="Fora da nossa área de entrega">
-                    <p>
-                      Este endereço fica a {formatDistanceKm(quote.distanceMeters)}
-                      {quote.maxDistanceMeters ? `, acima do limite de ${formatDistanceKm(quote.maxDistanceMeters)}` : ""}.
-                      Você pode escolher retirada ou combinar pelo WhatsApp.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {cfg.pickupEnabled && <Button size="sm" variant="secondary" onClick={() => update("fulfillment", "PICKUP")}>Mudar para retirada</Button>}
-                      {whatsappHelp && <a href={whatsappHelp} target="_blank" rel="noopener" className={buttonClasses("success", "sm")}><MessageCircle className="size-4" aria-hidden /> Continuar pelo WhatsApp</a>}
-                    </div>
-                  </Notice>
-                )}
-                {quoteState.status === "error" && (
-                  <Notice tone="danger" title={quoteState.error.code.startsWith("ADDRESS_") ? "Endereço não localizado" : "Não foi possível calcular a entrega automaticamente."}>
-                    <p>{quoteState.error.code.startsWith("ADDRESS_") ? friendlyMessage(quoteState.error) : "Você pode tentar de novo, escolher retirada ou continuar pelo WhatsApp."}</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" onClick={refreshQuote}>Tentar de novo</Button>
-                      {cfg.pickupEnabled && <Button size="sm" variant="secondary" onClick={() => update("fulfillment", "PICKUP")}>Mudar para retirada</Button>}
-                      {whatsappHelp && <a href={whatsappHelp} target="_blank" rel="noopener" className={buttonClasses("success", "sm")} data-testid="whatsapp-fallback"><MessageCircle className="size-4" aria-hidden /> Continuar pelo WhatsApp</a>}
-                    </div>
-                  </Notice>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* 4. Quando ---------------------------------------------------------- */}
-          <Section number={isDelivery ? 4 : 3} title={isDelivery ? "Quando entregar" : "Quando retirar"}>
-            {slots.isLoading ? (
-              <p className="text-sm text-cocoa-600">Carregando horários…</p>
-            ) : slots.isError ? (
-              <Notice tone="danger" title="Não foi possível carregar os horários">
-                <Button size="sm" variant="secondary" onClick={() => slots.refetch()}>Tentar de novo</Button>
-              </Notice>
-            ) : slotList.length === 0 ? (
-              <Notice tone="warning" title="Sem horários disponíveis">
-                Não há janelas livres nos próximos dias. Fale com a gente pelo WhatsApp.
-              </Notice>
-            ) : (
-              <Field label="Horário" hint={`Horários de Brasília. Antecedência mínima de ${cfg.minLeadTimeMinutes} min.`}>
-                {({ id, describedBy }) => (
-                  <Select id={id} aria-describedby={describedBy} value={selectedSlot?.start ?? ""} onChange={(e) => update("slot", e.target.value)} data-testid="slot-select">
-                    {slotList.map((slot) => (
-                      <option key={slot.start} value={slot.start}>{formatSlot(slot)}</option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
             )}
           </Section>
 
-          {/* 5. Pagamento ------------------------------------------------------- */}
-          <Section number={isDelivery ? 5 : 4} title="Pagamento">
+          {/* 3. Quando ------------------------------------------------------------ */}
+          <Section number={3} title={isDelivery ? "Quando entregar" : "Quando retirar"}>
+            {cfg.availableDates.length === 0 ? (
+              <Notice tone="warning" title="Sem datas disponíveis">Fale com a gente pelo WhatsApp para combinar.</Notice>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-cocoa-800">Dia</p>
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="radiogroup" aria-label="Dia">
+                    {cfg.availableDates.map((key) => {
+                      const chip = formatDateChip(key, cfg.today);
+                      return (
+                        <Chip key={key} selected={date === key} onClick={() => update("date", key)} testId={`date-${key}`}>
+                          <span>{chip.top}</span>
+                          <span className="text-xs font-normal opacity-80">{chip.bottom}</span>
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-cocoa-800">Período</p>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Período">
+                    {cfg.periods.map((p) => (
+                      <Chip key={p} selected={period === p} onClick={() => update("period", p)} testId={`period-${p}`}>
+                        {PERIOD_LABEL[p]}
+                      </Chip>
+                    ))}
+                  </div>
+                  <p className="text-xs text-cocoa-500">Confirmamos o horário exato pelo WhatsApp.</p>
+                </div>
+              </>
+            )}
+          </Section>
+
+          {/* 4. Pagamento ---------------------------------------------------------- */}
+          <Section number={4} title="Pagamento">
             <div className="grid gap-3" role="radiogroup" aria-label="Forma de pagamento">
               {cfg.paymentMethods.map((method) => (
                 <ChoiceCard key={method} name="payment" value={method} checked={paymentMethod === method}
@@ -526,30 +401,30 @@ export default function Checkout() {
               ))}
             </div>
             {paymentMethod === "CASH" && (
-              <Field label="Troco para quanto?" optional error={errors.cashChangeForCents} hint="Deixe em branco se não precisar de troco.">
+              <Field label="Troco para quanto?" optional error={e("cashChangeForCents")} hint="Deixe em branco se não precisar de troco.">
                 {({ id, describedBy }) => (
                   <Input id={id} aria-describedby={describedBy} inputMode="decimal" placeholder="R$ 50,00" value={form.cashChange}
-                    error={errors.cashChangeForCents} onChange={(e) => update("cashChange", e.target.value)} className="max-w-48" />
+                    error={e("cashChangeForCents")} onChange={(ev) => update("cashChange", ev.target.value)} className="max-w-48" />
                 )}
               </Field>
             )}
-            <Field label="Observações" optional error={errors.notes}>
+            <Field label="Observações" optional error={e("notes")}>
               {({ id, describedBy }) => (
-                <Textarea id={id} aria-describedby={describedBy} value={form.notes} onChange={(e) => update("notes", e.target.value)}
+                <Textarea id={id} aria-describedby={describedBy} value={form.notes} onChange={(ev) => update("notes", ev.target.value)}
                   maxLength={500} placeholder="Ex.: é para presente, tocar o interfone 12." />
               )}
             </Field>
           </Section>
         </div>
 
-        {/* Resumo ----------------------------------------------------------------- */}
-        <aside className="lg:sticky lg:top-24 lg:h-fit" aria-label="Resumo do pedido">
+        {/* Resumo ------------------------------------------------------------------ */}
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:h-fit" aria-label="Resumo do pedido">
           <div className="card space-y-5 p-5 sm:p-6">
             <h2 className="font-display text-xl">Resumo</h2>
             <ul className="space-y-3">
-              {summaryItems.map((item) => (
+              {reconciled.items.map((item) => (
                 <li key={item.product.id} className="flex items-center gap-3 text-sm">
-                  <span className="size-12 shrink-0 overflow-hidden rounded-xl bg-cream-100"><ProductImage product={item.product} sizes="48px" /></span>
+                  <span className="size-12 shrink-0 overflow-hidden rounded-xl bg-cream-100"><ProductImage product={item.product} /></span>
                   <span className="flex-1"><span className="font-semibold">{item.quantity}x</span> {item.product.name}</span>
                   <span className="tabular-nums">{formatBRL(item.lineTotalCents)}</span>
                 </li>
@@ -559,29 +434,25 @@ export default function Checkout() {
               <div className="flex justify-between"><dt className="text-cocoa-600">Subtotal</dt><dd className="tabular-nums" data-testid="summary-subtotal">{formatBRL(subtotal)}</dd></div>
               <div className="flex justify-between">
                 <dt className="text-cocoa-600">{isDelivery ? "Entrega" : "Retirada"}</dt>
-                <dd className="tabular-nums" data-testid="summary-delivery">
-                  {!isDelivery ? "grátis" : deliveryFee === null ? "a calcular" : deliveryFee === 0 ? "grátis" : formatBRL(deliveryFee)}
-                </dd>
+                <dd className="tabular-nums" data-testid="summary-delivery">{isDelivery ? formatBRL(deliveryFee) : "grátis"}</dd>
               </div>
               <div className="flex justify-between border-t border-cream-200 pt-3 text-lg">
                 <dt className="font-semibold">Total</dt>
-                <dd className="font-bold tabular-nums" data-testid="summary-total">{total === null ? "…" : formatBRL(total)}</dd>
+                <dd className="font-bold tabular-nums" data-testid="summary-total">{formatBRL(total)}</dd>
               </div>
             </dl>
 
-            {serverNotice && (
-              <Notice tone={serverNotice.tone} title={serverNotice.title}>{serverNotice.body}</Notice>
-            )}
+            {serverNotice && <Notice tone={serverNotice.tone} title={serverNotice.title}>{serverNotice.body}</Notice>}
             {blockingReason && !serverNotice && <p className="text-sm text-cocoa-600" data-testid="blocking-reason">{blockingReason}</p>}
 
             <Button type="submit" size="lg" block loading={mutation.isPending} disabled={Boolean(blockingReason)} data-testid="place-order">
-              {mutation.isPending ? "Enviando pedido…" : `Confirmar pedido${total !== null ? ` · ${formatBRL(total)}` : ""}`}
+              {mutation.isPending ? "Enviando pedido…" : `Confirmar pedido · ${formatBRL(total)}`}
             </Button>
             <p className="flex items-start gap-2 text-xs text-cocoa-500">
               <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
-                Usamos seus dados somente para preparar, entregar e falar sobre este pedido. Valores e estoque são confirmados pelo nosso sistema no envio.
-                Veja a <Link to="/privacidade" className="underline">Política de Privacidade</Link>.
+                Usamos seus dados só para preparar, entregar e falar sobre este pedido. Veja a{" "}
+                <Link to="/privacidade" className="underline">política de privacidade</Link>.
               </span>
             </p>
           </div>

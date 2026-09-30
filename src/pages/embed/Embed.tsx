@@ -5,7 +5,6 @@ import { CategoryTabs } from "@/components/store/CategoryTabs";
 import { ProductCard, ProductCardSkeleton } from "@/components/store/ProductCard";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 import { useCatalog, useStoreConfig } from "@/hooks/useStore";
-import { track } from "@/lib/analytics";
 import { postToParent, startAutoResize } from "@/lib/embed";
 import { storeUrl } from "@/lib/env";
 import { useDocumentMeta } from "@/lib/seo";
@@ -62,7 +61,6 @@ export default function Embed() {
   const onBuy = (product: Product) => {
     postToParent("ADD_TO_CART", { productId: product.id, slug: product.slug, name: product.name });
     postToParent("OPEN_STORE", { path: `/produto/${product.slug}` });
-    track("add_to_cart", { items: [{ item_id: product.id, item_name: product.name, price: product.price_cents / 100, quantity: 1 }], source: "embed" });
   };
 
   return (

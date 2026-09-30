@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { addressToRoutingQuery, normalizeBrazilPhone, parseOrderRequest, parseQuoteRequest, validateAddress } from "./validation.ts";
+import { normalizeBrazilPhone, parseOrderRequest, validateAddress } from "./validation.ts";
 
 const address = {
-  cep: "29300-000",
-  street: "Rua Teste",
+  street: "  Rua   Teste ",
   number: "42",
-  neighborhood: "Centro",
-  city: "Cachoeiro de Itapemirim",
-  state: "es",
+  district: "Centro",
 };
 
 function validOrder(overrides: Record<string, unknown> = {}) {
   return {
     idempotencyKey: "0b9f7c1e-8a4f-4f2b-9d57-3a8c1e2f4b6d",
     customer: { name: "  Maria   Teste ", phone: "(28) 99988-7766", email: "Maria@Teste.com" },
-    fulfillment: { type: "PICKUP", scheduledFor: "2026-10-01T15:00:00Z" },
+    fulfillment: { type: "PICKUP", date: "2026-10-01", period: "AFTERNOON" },
     items: [{ productId: "22222222-2222-4222-8222-000000000001", quantity: 2 }],
     paymentMethod: "PIX",
     expectedTotalCents: 2400,
@@ -40,30 +37,23 @@ describe("normalizeBrazilPhone", () => {
 });
 
 describe("validateAddress", () => {
-  it("normaliza CEP e UF", () => {
+  it("normaliza espaços e deixa opcionais nulos", () => {
     const result = validateAddress(address);
-    expect(result.ok && result.value).toMatchObject({ cep: "29300000", state: "ES", complement: null });
+    expect(result.ok && result.value).toEqual({ street: "Rua Teste", number: "42", district: "Centro", complement: null, reference: null });
   });
 
-  it("rejeita coordenadas ou distância enviadas pelo navegador", () => {
-    const result = validateAddress({ ...address, lat: -20.8, lng: -41.1, distanceKm: 1 });
+  it("rejeita coordenadas, distância ou frete enviados pelo navegador", () => {
+    const result = validateAddress({ ...address, lat: -20.8, lng: -41.1, distanceKm: 1, feeCents: 0 });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(Object.keys(result.errors)).toEqual(expect.arrayContaining(["address.lat", "address.lng", "address.distanceKm"]));
+      expect(Object.keys(result.errors)).toEqual(expect.arrayContaining(["address.lat", "address.lng", "address.distanceKm", "address.feeCents"]));
     }
   });
 
-  it("exige campos obrigatórios", () => {
-    const result = validateAddress({ cep: "123", street: "", number: "", neighborhood: "", city: "", state: "XX" });
+  it("exige rua, número e bairro", () => {
+    const result = validateAddress({ street: "", number: "", district: "" });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(Object.keys(result.errors)).toHaveLength(6);
-  });
-
-  it("monta a consulta de rota legível", () => {
-    const result = validateAddress(address);
-    expect(result.ok && addressToRoutingQuery(result.value)).toBe(
-      "Rua Teste, 42 - Centro, Cachoeiro de Itapemirim - ES, 29300-000, Brasil",
-    );
+    if (!result.ok) expect(Object.keys(result.errors)).toHaveLength(3);
   });
 });
 
@@ -89,7 +79,7 @@ describe("parseOrderRequest", () => {
     if (!result.ok) expect(result.errors["items.0.priceCents"]).toBeDefined();
   });
 
-  it.each([[-1], [0], [501], [1.5], ["2"], [Number.MAX_SAFE_INTEGER]])("rejeita quantidade %s", (quantity) => {
+  it.each([[-1], [0], [100], [1.5], ["2"], [Number.MAX_SAFE_INTEGER]])("rejeita quantidade %s", (quantity) => {
     const result = parseOrderRequest(validOrder({ items: [{ productId: "22222222-2222-4222-8222-000000000001", quantity }] }));
     expect(result.ok).toBe(false);
   });
@@ -100,14 +90,22 @@ describe("parseOrderRequest", () => {
   });
 
   it("exige endereço para entrega e rejeita para retirada", () => {
-    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", scheduledFor: "2026-10-01T15:00:00Z" } })).ok).toBe(false);
-    expect(parseOrderRequest(validOrder({ fulfillment: { type: "PICKUP", scheduledFor: "2026-10-01T15:00:00Z", address } })).ok).toBe(false);
-    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", scheduledFor: "2026-10-01T15:00:00Z", address } })).ok).toBe(true);
+    const when = { date: "2026-10-01", period: "AFTERNOON" };
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", ...when } })).ok).toBe(false);
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "PICKUP", ...when, address } })).ok).toBe(false);
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", ...when, address } })).ok).toBe(true);
   });
 
-  it("rejeita distância informada pelo cliente na entrega", () => {
-    const result = parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", scheduledFor: "2026-10-01T15:00:00Z", address, distanceKm: 1 } }));
-    expect(result.ok).toBe(false);
+  it("rejeita frete ou distância informados pelo cliente", () => {
+    const when = { date: "2026-10-01", period: "AFTERNOON" };
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", ...when, address, distanceKm: 1 } })).ok).toBe(false);
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "DELIVERY", ...when, address, feeCents: 0 } })).ok).toBe(false);
+  });
+
+  it("exige data AAAA-MM-DD e período conhecido", () => {
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "PICKUP", date: "01/10/2026", period: "AFTERNOON" } })).ok).toBe(false);
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "PICKUP", date: "2026-10-01", period: "MADRUGADA" } })).ok).toBe(false);
+    expect(parseOrderRequest(validOrder({ fulfillment: { type: "PICKUP", date: "2026-10-01", period: "EVENING" } })).ok).toBe(true);
   });
 
   it("mantém troco somente para dinheiro", () => {
@@ -127,15 +125,5 @@ describe("parseOrderRequest", () => {
     expect(parseOrderRequest(null).ok).toBe(false);
     expect(parseOrderRequest([]).ok).toBe(false);
     expect(parseOrderRequest("pedido").ok).toBe(false);
-  });
-});
-
-describe("parseQuoteRequest", () => {
-  it("aceita endereço e subtotal", () => {
-    expect(parseQuoteRequest({ address, subtotalCents: 2400 }).ok).toBe(true);
-  });
-  it("rejeita distância e campos extras", () => {
-    expect(parseQuoteRequest({ address, distanceKm: 1 }).ok).toBe(false);
-    expect(parseQuoteRequest({ address, subtotalCents: -5 }).ok).toBe(false);
   });
 });

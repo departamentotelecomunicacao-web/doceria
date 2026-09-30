@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centsToInput, formatBRL, formatDistanceKm, parseBRLToCents } from "./money";
+import { centsToInput, formatBRL, parseBRLToCents } from "./money";
 
 describe("money", () => {
   it("formata centavos em BRL", () => {
@@ -31,6 +31,5 @@ describe("money", () => {
 
   it("helpers de exibição", () => {
     expect(centsToInput(1500)).toBe("15,00");
-    expect(formatDistanceKm(2150)).toBe("2,2 km");
   });
 });

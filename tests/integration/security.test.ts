@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { PUBLISHABLE_KEY, SUPABASE_URL, callFunction, createTestProduct, orderPayload, rest, signIn } from "../helpers/local";
+import { PUBLISHABLE_KEY, SUPABASE_URL, callFunction, createTestProduct, getStock, orderPayload, rest, signIn } from "../helpers/local";
 
 type ErrorResponse = { error: { code: string } };
 
 describe("segurança: acesso público", () => {
-  it.each(["orders", "customers", "customer_addresses", "store_settings", "inventory_movements", "audit_logs", "delivery_quotes", "payment_records"])(
+  it.each(["orders", "order_items", "order_events", "order_notifications", "store_settings", "profiles", "rate_limits"])(
     "visitante não lê %s",
     async (table) => {
       const result = await rest(`${table}?select=*`);
@@ -26,12 +26,12 @@ describe("segurança: acesso público", () => {
     const product = await createTestProduct({ stock: 5, priceCents: 2500 });
     const price = await rest(`products?id=eq.${product.id}`, { method: "PATCH", body: JSON.stringify({ price_cents: 1 }) });
     expect([401, 403]).toContain(price.status);
-    const stock = await rest(`products?id=eq.${product.id}`, { method: "PATCH", body: JSON.stringify({ stock_available: 999 }) });
+    const stock = await rest(`products?id=eq.${product.id}`, { method: "PATCH", body: JSON.stringify({ stock: 999 }) });
     expect([401, 403]).toContain(stock.status);
   });
 
   it("visitante não chama funções internas nem administrativas", async () => {
-    for (const fn of ["create_order", "admin_transition_order", "inventory_adjust", "admin_dashboard", "get_routing_origin", "expire_stale_orders"]) {
+    for (const fn of ["create_order", "admin_set_status", "admin_set_paid", "admin_set_product_stock", "rate_limit_hit"]) {
       const result = await rest(`rpc/${fn}`, { method: "POST", body: "{}" });
       expect([401, 403, 404]).toContain(result.status);
     }
@@ -55,6 +55,7 @@ describe("segurança: manipulação do pedido", () => {
       { ...payload, deliveryFeeCents: 0 },
       { ...payload, items: [{ productId: product.id, quantity: 1, priceCents: 1 }] },
       { ...payload, fulfillment: { ...payload.fulfillment, distanceKm: 1 } },
+      { ...payload, fulfillment: { ...payload.fulfillment, feeCents: 0 } },
       { ...payload, stock: 999 },
     ];
     for (const body of tampered) {
@@ -71,7 +72,7 @@ describe("segurança: manipulação do pedido", () => {
     expect(result.body.error.code).toBe("PRICE_CHANGED");
   });
 
-  it.each([[-1], [0], [100000], [2.5]])("quantidade %s é rejeitada", async (quantity) => {
+  it.each([[-1], [0], [100], [2.5]])("quantidade %s é rejeitada", async (quantity) => {
     const product = await createTestProduct({ stock: 5 });
     const result = await callFunction<ErrorResponse>("create-order", await orderPayload({ items: [{ productId: product.id, quantity }], expectedTotalCents: 2500 }));
     expect(result.status).toBe(400);
@@ -95,29 +96,49 @@ describe("segurança: manipulação do pedido", () => {
 });
 
 describe("segurança: papéis da equipe", () => {
-  it("operador não altera preço (RLS) e não gerencia equipe", async () => {
+  it("atendente não altera preço nem configurações e não gerencia a equipe", async () => {
     const product = await createTestProduct({ stock: 5, priceCents: 2500 });
-    const token = await signIn("operador@doceria.local");
-    const update = await rest<unknown[]>(`products?id=eq.${product.id}`, {
-      method: "PATCH",
-      token,
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ price_cents: 1 }),
+    const token = await signIn("atendente@doceria.local");
+    const price = await rest<unknown[]>(`products?id=eq.${product.id}`, {
+      method: "PATCH", token, headers: { Prefer: "return=representation" }, body: JSON.stringify({ price_cents: 1 }),
     });
-    expect(update.body).toEqual([]);
+    expect(price.body).toEqual([]);
+    const settings = await rest<unknown[]>("store_settings?id=eq.true", {
+      method: "PATCH", token, headers: { Prefer: "return=representation" }, body: JSON.stringify({ delivery_fee_cents: 0 }),
+    });
+    expect(settings.body).toEqual([]);
     const team = await callFunction<ErrorResponse>("admin-users", { action: "list" }, token);
     expect(team.status).toBe(403);
   });
 
-  it("admin-users sem sessão é rejeitado", async () => {
+  it("atendente marca produto como esgotado", async () => {
+    const product = await createTestProduct({ stock: 5, priceCents: 2500 });
+    const token = await signIn("atendente@doceria.local");
+    const result = await rest("rpc/admin_set_product_stock", {
+      method: "POST", token, body: JSON.stringify({ p_product_id: product.id, p_is_active: true, p_stock: 0 }),
+    });
+    expect(result.status).toBe(204);
+    expect(await getStock(product.id)).toBe(0);
+  });
+
+  it("admin-users sem sessão é recusado", async () => {
     const result = await callFunction<ErrorResponse>("admin-users", { action: "list" });
     expect(result.status).toBe(401);
   });
 
   it("dono lista a equipe", async () => {
-    const token = await signIn("owner@doceria.local");
-    const result = await callFunction<{ members: unknown[] }>("admin-users", { action: "list" }, token);
+    const token = await signIn("dono@doceria.local");
+    const result = await callFunction<{ members: { role: string }[] }>("admin-users", { action: "list" }, token);
     expect(result.status).toBe(200);
-    expect(result.body.members.length).toBeGreaterThanOrEqual(3);
+    expect(result.body.members.map((m) => m.role).sort()).toEqual(expect.arrayContaining(["OWNER", "STAFF"]));
+  });
+
+  it("não é possível remover o último dono ativo", async () => {
+    const token = await signIn("dono@doceria.local");
+    const result = await callFunction<ErrorResponse>("admin-users", {
+      action: "update", userId: "33333333-3333-4333-8333-000000000001", role: "STAFF",
+    }, token);
+    expect(result.status).toBe(409);
+    expect(result.body.error.code).toBe("LAST_OWNER");
   });
 });

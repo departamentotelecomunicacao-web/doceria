@@ -1,14 +1,14 @@
 import { Badge } from "@/components/ui/Badge";
-import { stockStatusOf } from "@/lib/labels";
 import type { Product } from "@/types/domain";
 
-export function StockBadge({ product, className }: { product: Pick<Product, "stock_available" | "low_stock_threshold">; className?: string }) {
-  const status = stockStatusOf(product);
-  if (status === "SOLD_OUT") return <Badge tone="danger" className={className}>Esgotado</Badge>;
-  if (status === "LOW") {
+/** Só aparece quando o produto tem controle de estoque e está acabando. */
+export function StockBadge({ product, className }: { product: Pick<Product, "stock">; className?: string }) {
+  if (product.stock === null) return null;
+  if (product.stock <= 0) return <Badge tone="danger" className={className}>Esgotado</Badge>;
+  if (product.stock <= 3) {
     return (
       <Badge tone="warning" className={className}>
-        {product.stock_available === 1 ? "Última unidade" : `Últimas ${product.stock_available} unidades`}
+        {product.stock === 1 ? "Última unidade" : `Últimas ${product.stock} unidades`}
       </Badge>
     );
   }

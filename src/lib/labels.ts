@@ -1,36 +1,29 @@
-import type { FulfillmentType, OrderStatus, PaymentMethod, PaymentStatus, StockStatus } from "@/types/domain";
+import type { DayPeriod, FulfillmentType, OrderStatus, PaymentMethod } from "@/types/domain";
+
+export function orderStatusLabel(status: OrderStatus, type?: FulfillmentType): string {
+  if (status === "DELIVERED") return type === "PICKUP" ? "Retirado" : "Entregue";
+  return ORDER_STATUS_LABEL[status];
+}
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  NEW: "Novo",
-  AWAITING_PAYMENT: "Aguardando pagamento",
+  RECEIVED: "Recebido",
   CONFIRMED: "Confirmado",
   PREPARING: "Em preparo",
-  READY: "Pronto",
   OUT_FOR_DELIVERY: "Saiu para entrega",
-  COMPLETED: "Concluído",
+  READY_FOR_PICKUP: "Pronto para retirada",
+  DELIVERED: "Entregue",
   CANCELED: "Cancelado",
-  EXPIRED: "Expirado",
 };
 
 /** Texto para o cliente na página do pedido. */
 export const ORDER_STATUS_CUSTOMER: Record<OrderStatus, string> = {
-  NEW: "Recebemos seu pedido e vamos confirmar em breve.",
-  AWAITING_PAYMENT: "Aguardando o pagamento via PIX para confirmar.",
-  CONFIRMED: "Pedido confirmado! Já está na nossa fila.",
+  RECEIVED: "Recebemos seu pedido e vamos confirmar em breve.",
+  CONFIRMED: "Pedido confirmado! Já está na nossa agenda.",
   PREPARING: "Seus cookies estão sendo preparados.",
-  READY: "Seu pedido está pronto.",
   OUT_FOR_DELIVERY: "Seu pedido saiu para entrega.",
-  COMPLETED: "Pedido entregue. Bom apetite!",
+  READY_FOR_PICKUP: "Seu pedido está pronto para retirada.",
+  DELIVERED: "Pedido concluído. Bom apetite!",
   CANCELED: "Este pedido foi cancelado.",
-  EXPIRED: "O prazo deste pedido expirou e ele não foi concluído.",
-};
-
-export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
-  PENDING: "Pendente",
-  MANUAL_CONFIRMATION: "Em conferência",
-  PAID: "Pago",
-  FAILED: "Falhou",
-  REFUNDED: "Reembolsado",
 };
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
@@ -44,36 +37,40 @@ export const FULFILLMENT_LABEL: Record<FulfillmentType, string> = {
   DELIVERY: "Entrega",
 };
 
-export const STOCK_STATUS_LABEL: Record<StockStatus, string> = {
-  AVAILABLE: "Disponível",
-  LOW: "Baixo",
-  SOLD_OUT: "Esgotado",
+export const PERIOD_LABEL: Record<DayPeriod, string> = {
+  MORNING: "Manhã",
+  AFTERNOON: "Tarde",
+  EVENING: "Noite",
 };
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "accent";
 
 export const ORDER_STATUS_TONE: Record<OrderStatus, Tone> = {
-  NEW: "accent",
-  AWAITING_PAYMENT: "warning",
+  RECEIVED: "accent",
   CONFIRMED: "info",
   PREPARING: "info",
-  READY: "success",
   OUT_FOR_DELIVERY: "info",
-  COMPLETED: "neutral",
+  READY_FOR_PICKUP: "success",
+  DELIVERED: "neutral",
   CANCELED: "danger",
-  EXPIRED: "danger",
 };
 
-export const PAYMENT_STATUS_TONE: Record<PaymentStatus, Tone> = {
-  PENDING: "warning",
-  MANUAL_CONFIRMATION: "info",
-  PAID: "success",
-  FAILED: "danger",
-  REFUNDED: "neutral",
-};
+/** Próximos status possíveis (espelha public.order_next_statuses). */
+export function nextStatuses(status: OrderStatus, type: FulfillmentType): OrderStatus[] {
+  const ready: OrderStatus = type === "DELIVERY" ? "OUT_FOR_DELIVERY" : "READY_FOR_PICKUP";
+  switch (status) {
+    case "RECEIVED": return ["CONFIRMED", "CANCELED"];
+    case "CONFIRMED": return ["PREPARING", ready, "CANCELED"];
+    case "PREPARING": return [ready, "CANCELED"];
+    case "OUT_FOR_DELIVERY":
+    case "READY_FOR_PICKUP": return ["DELIVERED", "CANCELED"];
+    default: return [];
+  }
+}
 
-export function stockStatusOf(product: { stock_available: number; low_stock_threshold: number }): StockStatus {
-  if (product.stock_available <= 0) return "SOLD_OUT";
-  if (product.stock_available <= product.low_stock_threshold) return "LOW";
-  return "AVAILABLE";
+/** Status que ainda pedem ação da equipe. */
+export const OPEN_STATUSES: OrderStatus[] = ["RECEIVED", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "READY_FOR_PICKUP"];
+
+export function isSoldOut(product: { stock: number | null }): boolean {
+  return product.stock !== null && product.stock <= 0;
 }

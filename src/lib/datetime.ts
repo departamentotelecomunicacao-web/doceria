@@ -1,3 +1,5 @@
+import type { DayPeriod } from "@/types/domain";
+
 // Datas sempre apresentadas em America/Sao_Paulo, independentemente do fuso do
 // aparelho. As regras (janelas, antecedência, expiração) são do servidor.
 
@@ -55,10 +57,6 @@ export function formatDayLabel(value: string | Date, now: Date = new Date()): st
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-export function formatSlot(slot: { start: string; end: string }, now?: Date): string {
-  return `${formatDayLabel(slot.start, now)}, ${formatTime(slot.start)} às ${formatTime(slot.end)}`;
-}
-
 export function formatRelativeMinutes(value: string | Date, now: Date = new Date()): string {
   const diffMin = Math.round((toDate(value).getTime() - now.getTime()) / 60_000);
   if (Math.abs(diffMin) < 1) return "agora";
@@ -67,32 +65,60 @@ export function formatRelativeMinutes(value: string | Date, now: Date = new Date
   return diffMin > 0 ? `em ${label}` : `há ${label}`;
 }
 
-export const WEEKDAY_LABELS: Record<string, string> = {
-  "1": "Segunda",
-  "2": "Terça",
-  "3": "Quarta",
-  "4": "Quinta",
-  "5": "Sexta",
-  "6": "Sábado",
-  "7": "Domingo",
-};
+// ---------------------------------------------------------------------------
+// Agenda por data (AAAA-MM-DD) e período. As datas são chaves do calendário
+// da loja; convertidas ao meio-dia UTC para não "pular" de dia em outro fuso.
+// ---------------------------------------------------------------------------
+const WEEKDAYS_LONG = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+const WEEKDAYS_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+export const WEEKDAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const PERIOD_TEXT: Record<DayPeriod, string> = { MORNING: "manhã", AFTERNOON: "tarde", EVENING: "noite" };
 
-export type WeeklyHours = Record<string, [string, string][]>;
+function parseKey(key: string): { weekday: number; day: string; month: string } {
+  const [y, m, d] = key.split("-").map(Number);
+  return {
+    weekday: new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay(),
+    day: String(d).padStart(2, "0"),
+    month: String(m).padStart(2, "0"),
+  };
+}
 
-/** Agrupa dias com o mesmo horário: "Segunda a sexta: 10:00 às 18:00". */
-export function summarizeWeeklyHours(hours: WeeklyHours): { days: string; hours: string }[] {
-  const rows: { days: string[]; hours: string }[] = [];
-  for (const day of ["1", "2", "3", "4", "5", "6", "7"]) {
-    const windows = hours[day] ?? [];
-    const label = windows.length === 0 ? "Fechado" : windows.map(([open, close]) => `${open} às ${close}`).join(" e ");
-    const last = rows[rows.length - 1];
-    if (last && last.hours === label) last.days.push(day);
-    else rows.push({ days: [day], hours: label });
+function addDays(key: string, days: number): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days, 12)).toISOString().slice(0, 10);
+}
+
+/** "Hoje", "Amanhã" ou "Qui 02/10" (para os botões de data). */
+export function formatDateChip(key: string, today: string): { top: string; bottom: string } {
+  const { weekday, day, month } = parseKey(key);
+  if (key === today) return { top: "Hoje", bottom: `${day}/${month}` };
+  if (key === addDays(today, 1)) return { top: "Amanhã", bottom: `${day}/${month}` };
+  return { top: WEEKDAYS_SHORT[weekday], bottom: `${day}/${month}` };
+}
+
+/** "quinta-feira, 02/10, período da tarde" */
+export function formatScheduleLong(key: string, period: DayPeriod): string {
+  const { weekday, day, month } = parseKey(key);
+  const text = `${WEEKDAYS_LONG[weekday]}, ${day}/${month}, período da ${PERIOD_TEXT[period]}`;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** "Qui 02/10 · Tarde" (listas do painel). */
+export function formatScheduleShort(key: string, period: DayPeriod, today?: string): string {
+  const { weekday, day, month } = parseKey(key);
+  const label = today && key === today ? "Hoje" : today && key === addDays(today, 1) ? "Amanhã" : `${WEEKDAYS_SHORT[weekday]} ${day}/${month}`;
+  const p = PERIOD_TEXT[period];
+  return `${label} · ${p.charAt(0).toUpperCase()}${p.slice(1)}`;
+}
+
+/** Agrupa dias de funcionamento: [1,2,3,4,5,6] -> "Segunda a sábado". */
+export function summarizeWeekdays(days: number[]): string {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  if (sorted.length === 0) return "Fechado";
+  if (sorted.length === 7) return "Todos os dias";
+  const consecutive = sorted.every((d, i) => i === 0 || d === sorted[i - 1] + 1);
+  if (consecutive && sorted.length > 2) {
+    return `${WEEKDAY_NAMES[sorted[0]]} a ${WEEKDAY_NAMES[sorted[sorted.length - 1]].toLowerCase()}`;
   }
-  return rows.map((row) => ({
-    days: row.days.length === 1
-      ? WEEKDAY_LABELS[row.days[0]]
-      : `${WEEKDAY_LABELS[row.days[0]]} a ${WEEKDAY_LABELS[row.days[row.days.length - 1]].toLowerCase()}`,
-    hours: row.hours,
-  }));
+  return sorted.map((d) => WEEKDAY_NAMES[d]).join(", ");
 }

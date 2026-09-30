@@ -1,29 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDayLabel, formatSlot, storeDateKey, summarizeWeeklyHours } from "./datetime";
+import { formatDateChip, formatDateTime, formatScheduleLong, formatScheduleShort, storeDateKey, summarizeWeekdays } from "./datetime";
 
 describe("datas no fuso da loja (America/Sao_Paulo)", () => {
   it("formata independentemente do fuso do aparelho", () => {
-    // 02:30 UTC ainda é dia anterior em São Paulo (UTC-3).
+    // 02:30 UTC ainda é o dia anterior em São Paulo (UTC-3).
     expect(storeDateKey("2026-10-01T02:30:00Z")).toBe("2026-09-30");
     expect(formatDateTime("2026-10-01T15:00:00Z")).toBe("01/10/2026 às 12:00");
   });
 
-  it("rótulos de dia relativos", () => {
-    const now = new Date("2026-10-01T13:00:00Z");
-    expect(formatDayLabel("2026-10-01T20:00:00Z", now)).toBe("Hoje");
-    expect(formatDayLabel("2026-10-02T13:00:00Z", now)).toBe("Amanhã");
-    expect(formatSlot({ start: "2026-10-01T21:00:00Z", end: "2026-10-01T22:00:00Z" }, now)).toBe("Hoje, 18:00 às 19:00");
+  it("agenda por data e período", () => {
+    expect(formatScheduleLong("2026-10-01", "AFTERNOON")).toBe("Quinta-feira, 01/10, período da tarde");
+    expect(formatScheduleShort("2026-10-01", "MORNING", "2026-10-01")).toBe("Hoje · Manhã");
+    expect(formatScheduleShort("2026-10-02", "EVENING", "2026-10-01")).toBe("Amanhã · Noite");
+    expect(formatScheduleShort("2026-10-05", "AFTERNOON", "2026-10-01")).toBe("Seg 05/10 · Tarde");
   });
 
-  it("agrupa dias com o mesmo horário", () => {
-    const summary = summarizeWeeklyHours({
-      "1": [["10:00", "18:00"]], "2": [["10:00", "18:00"]], "3": [["10:00", "18:00"]], "4": [["10:00", "18:00"]], "5": [["10:00", "18:00"]],
-      "6": [["10:00", "14:00"]], "7": [],
-    });
-    expect(summary).toEqual([
-      { days: "Segunda a sexta", hours: "10:00 às 18:00" },
-      { days: "Sábado", hours: "10:00 às 14:00" },
-      { days: "Domingo", hours: "Fechado" },
-    ]);
+  it("botões de data", () => {
+    expect(formatDateChip("2026-10-01", "2026-10-01")).toEqual({ top: "Hoje", bottom: "01/10" });
+    expect(formatDateChip("2026-10-02", "2026-10-01")).toEqual({ top: "Amanhã", bottom: "02/10" });
+    expect(formatDateChip("2026-10-03", "2026-10-01")).toEqual({ top: "Sáb", bottom: "03/10" });
+    // Virada de mês
+    expect(formatDateChip("2026-11-01", "2026-10-31")).toEqual({ top: "Amanhã", bottom: "01/11" });
+  });
+
+  it("resume os dias de funcionamento", () => {
+    expect(summarizeWeekdays([1, 2, 3, 4, 5, 6])).toBe("Segunda a sábado");
+    expect(summarizeWeekdays([0, 1, 2, 3, 4, 5, 6])).toBe("Todos os dias");
+    expect(summarizeWeekdays([5, 6])).toBe("Sexta, Sábado");
   });
 });

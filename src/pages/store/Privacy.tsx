@@ -1,16 +1,16 @@
-import { Button } from "@/components/ui/Button";
+import type { ReactNode } from "react";
 import { LoadingBlock } from "@/components/ui/States";
 import { useStoreConfig } from "@/hooks/useStore";
-import { getConsent, setConsent } from "@/lib/analytics";
-import { hasAnalytics, storeUrl } from "@/lib/env";
+import { storeUrl } from "@/lib/env";
 import { useDocumentMeta } from "@/lib/seo";
-import { useState, type ReactNode } from "react";
+import { whatsappLink } from "@/lib/whatsapp";
+import { formatBrazilPhone } from "@shared/validation.ts";
 
-const UPDATED_AT = "29/09/2026";
+const UPDATED_AT = "30/09/2026";
 
-function Block({ id, title, children }: { id?: string; title: string; children: ReactNode }) {
+function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24 space-y-3">
+    <section className="space-y-3">
       <h2 className="font-display text-2xl">{title}</h2>
       <div className="space-y-3 leading-relaxed text-cocoa-700">{children}</div>
     </section>
@@ -19,115 +19,71 @@ function Block({ id, title, children }: { id?: string; title: string; children: 
 
 export default function Privacy() {
   const { data: config, isLoading } = useStoreConfig();
-  const [consent, setConsentState] = useState(getConsent());
   useDocumentMeta({
-    title: `Política de Privacidade e Cookies${config ? ` · ${config.storeName}` : ""}`,
-    description: "Como tratamos seus dados pessoais (LGPD) e como usamos cookies.",
+    title: `Privacidade${config ? ` · ${config.storeName}` : ""}`,
+    description: "Como tratamos seus dados pessoais (LGPD).",
     canonical: storeUrl("/privacidade"),
   });
   if (isLoading || !config) return <LoadingBlock />;
 
-  const controller = config.legalName || config.storeName;
-  const contact = config.privacyContactEmail ?? config.contactEmail;
+  const whatsapp = whatsappLink(config.whatsappPhone);
 
   return (
     <article className="container-page max-w-3xl space-y-10 py-10 sm:py-14">
       <header className="space-y-3">
         <p className="eyebrow">LGPD</p>
-        <h1 className="font-display text-4xl sm:text-5xl">Política de Privacidade e Cookies</h1>
+        <h1 className="font-display text-4xl sm:text-5xl">Privacidade</h1>
         <p className="text-sm text-cocoa-500">Última atualização: {UPDATED_AT}</p>
       </header>
 
       <Block title="Quem somos">
         <p>
-          <strong>{controller}</strong> ({config.publicLocationLabel}) é a controladora dos dados pessoais tratados nesta loja online,
-          nos termos da Lei Geral de Proteção de Dados (Lei nº 13.709/2018).
+          <strong>{config.storeName}</strong> ({config.deliveryCity}) é responsável pelos dados pessoais usados nesta loja,
+          conforme a Lei Geral de Proteção de Dados (Lei nº 13.709/2018).
         </p>
-        {contact && (
+        {whatsapp && (
           <p>
-            Canal para assuntos de dados pessoais: <a className="font-semibold underline" href={`mailto:${contact}`}>{contact}</a>.
+            Fale com a gente sobre seus dados pelo WhatsApp{" "}
+            <a className="font-semibold underline" href={whatsapp} target="_blank" rel="noopener">{formatBrazilPhone(config.whatsappPhone)}</a>.
           </p>
         )}
       </Block>
 
-      <Block title="Quais dados coletamos e por quê">
+      <Block title="Quais dados usamos e por quê">
         <ul className="list-disc space-y-2 pl-5">
-          <li><strong>Nome e telefone</strong>: identificar o pedido e falar com você sobre ele (confirmação, pagamento, entrega).</li>
-          <li><strong>E-mail</strong> (opcional): contato alternativo sobre o pedido.</li>
-          <li><strong>Endereço de entrega</strong> (somente para entregas): calcular a taxa pela rota real e realizar a entrega.</li>
-          <li><strong>Histórico de pedidos</strong>: itens, valores, status e pagamentos, para operação, atendimento e obrigações legais.</li>
+          <li><strong>Nome e WhatsApp</strong>: identificar o pedido e falar com você sobre ele.</li>
+          <li><strong>E-mail</strong> (opcional): enviar a confirmação e as atualizações do pedido.</li>
+          <li><strong>Endereço</strong> (só para entrega): levar o pedido até você.</li>
+          <li><strong>Pedido</strong>: itens, valores, data e pagamento, para produzir, entregar e cumprir obrigações legais.</li>
           <li>
-            <strong>Dados técnicos</strong>: o endereço IP é transformado em um código irreversível (hash) apenas para limitar tentativas
-            abusivas. Não guardamos o IP em texto.
+            <strong>Dados técnicos</strong>: o endereço IP vira um código irreversível apenas para limitar tentativas
+            abusivas de pedido. Não guardamos o IP em si.
           </li>
         </ul>
-        <p>
-          Bases legais: execução do contrato de compra (art. 7º, V), cumprimento de obrigação legal (art. 7º, II) e legítimo interesse
-          para segurança e prevenção a fraudes (art. 7º, IX). Não vendemos nem usamos seus dados para outras finalidades.
-        </p>
+        <p>Não pedimos CPF, data de nascimento nem senha. Não há cadastro de cliente.</p>
       </Block>
 
       <Block title="Com quem compartilhamos">
         <ul className="list-disc space-y-2 pl-5">
-          <li><strong>Supabase</strong>: hospedagem do banco de dados e do sistema de pedidos.</li>
-          <li><strong>Google (Maps/Routes)</strong>: o endereço de entrega é enviado para calcular a distância da rota.</li>
-          <li><strong>ViaCEP</strong>: o CEP digitado é consultado para preencher o endereço automaticamente.</li>
-          <li><strong>WhatsApp</strong>: somente se você escolher enviar o pedido ou conversar por lá.</li>
+          <li><strong>Supabase</strong>: banco de dados onde os pedidos ficam guardados.</li>
+          <li><strong>EmailJS</strong>: envio dos e-mails de confirmação do pedido.</li>
+          <li><strong>WhatsApp</strong>: quando você ou a loja decidem conversar por lá.</li>
         </ul>
-        <p>Dados de clientes nunca aparecem em páginas públicas. O link do pedido é secreto e mostra o endereço parcialmente mascarado.</p>
+        <p>Não vendemos nem cedemos seus dados para publicidade.</p>
       </Block>
 
-      <Block title="Por quanto tempo guardamos">
+      <Block title="Armazenamento no seu aparelho">
         <p>
-          Os registros de pedidos são mantidos pelo prazo exigido pela legislação fiscal e contábil (em geral, 5 anos). Depois disso, ou a
-          seu pedido quando não houver obrigação legal de guarda, os dados pessoais são anonimizados.
+          Guardamos no navegador apenas o carrinho e os dados que você digitou no checkout, para não se perderem se a
+          página recarregar. Não usamos cookies de publicidade nem de rastreamento.
         </p>
       </Block>
 
-      <Block title="Seus direitos">
+      <Block title="Por quanto tempo e seus direitos">
         <p>
-          Você pode solicitar confirmação de tratamento, acesso, correção, anonimização, portabilidade, informação sobre compartilhamento e
-          eliminação dos seus dados (art. 18 da LGPD){contact ? <> pelo e-mail <a className="font-semibold underline" href={`mailto:${contact}`}>{contact}</a></> : null}.
-          Respondemos em até 15 dias.
+          Os pedidos ficam guardados pelo prazo exigido pela legislação fiscal e de consumo. Você pode pedir acesso,
+          correção ou exclusão dos seus dados (quando a lei permitir) pelo nosso WhatsApp.
         </p>
-      </Block>
-
-      <Block title="Segurança">
-        <p>
-          O acesso ao painel é restrito à equipe, com contas individuais e permissões por função. As regras de preço, estoque e acesso aos
-          dados são aplicadas no servidor, com comunicação criptografada (HTTPS).
-        </p>
-      </Block>
-
-      <Block id="cookies" title="Cookies e armazenamento local">
-        <p>
-          Usamos o armazenamento do navegador para funções essenciais: manter seu carrinho, o rascunho do checkout durante a sessão e suas
-          preferências. Isso não exige consentimento, pois é necessário para a compra funcionar.
-        </p>
-        {hasAnalytics ? (
-          <>
-            <p>
-              Ferramentas de medição (Google Analytics/Tag Manager e/ou Meta Pixel) só são carregadas se você aceitar. Você pode mudar a
-              escolha a qualquer momento (ao recusar depois de aceitar, recarregue a página para desligar as ferramentas).
-            </p>
-            <p className="text-sm">Preferência atual: <strong>{consent === "granted" ? "aceito" : consent === "denied" ? "recusado" : "não definida"}</strong></p>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => { setConsent("granted"); setConsentState("granted"); }}>Aceitar medição</Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setConsent("denied");
-                  setConsentState("denied");
-                }}
-              >
-                Recusar medição
-              </Button>
-            </div>
-          </>
-        ) : (
-          <p>Atualmente não usamos cookies de publicidade ou de medição de terceiros nesta loja.</p>
-        )}
       </Block>
     </article>
   );

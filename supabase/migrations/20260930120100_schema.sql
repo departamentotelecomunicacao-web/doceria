@@ -50,6 +50,8 @@ create table public.store_settings (
     notify_email is null or (char_length(notify_email) <= 254 and notify_email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$')
   ),
   instagram_url text not null default '' check (char_length(instagram_url) <= 200),
+  -- Site institucional (Wix): início, sobre, serviços. A loja linka de volta.
+  institutional_url text not null default '' check (char_length(institutional_url) <= 200),
   accepting_orders boolean not null default true,
   pause_message text not null default '' check (char_length(pause_message) <= 300),
   -- Entrega e retirada

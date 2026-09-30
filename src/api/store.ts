@@ -1,25 +1,10 @@
 import { callFunction } from "@/lib/functions";
 import { restRpc } from "@/lib/rest";
-import type {
-  CreateOrderResponse,
-  DeliveryQuote,
-  FulfillmentType,
-  PublicOrder,
-  Slot,
-  StoreConfig,
-} from "@/types/domain";
-import type { AddressInput, OrderRequest } from "@shared/validation.ts";
+import type { CreateOrderResponse, PublicOrder, StoreConfig } from "@/types/domain";
+import type { OrderRequest } from "@shared/validation.ts";
 
 export function fetchStoreConfig(): Promise<StoreConfig> {
   return restRpc<StoreConfig>("get_public_store_config");
-}
-
-export async function fetchSlots(type: FulfillmentType): Promise<Slot[]> {
-  return (await restRpc<Slot[] | null>("get_fulfillment_slots", { p_type: type })) ?? [];
-}
-
-export function requestDeliveryQuote(address: AddressInput, subtotalCents: number, signal?: AbortSignal): Promise<DeliveryQuote> {
-  return callFunction<DeliveryQuote>("delivery-quote", { address, subtotalCents }, { signal, timeoutMs: 20_000 });
 }
 
 export function submitOrder(payload: OrderRequest): Promise<CreateOrderResponse> {
