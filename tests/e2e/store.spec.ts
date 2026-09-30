@@ -9,8 +9,9 @@ test.describe("loja", () => {
 
     await page.getByRole("link", { name: "Ver cardápio", exact: true }).click();
     await expect(page).toHaveURL(/\/produtos/);
-    await expect(page.getByTestId("product-card").first()).toBeVisible();
-    expect(await page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(5);
+    // A URL muda antes da troca de tela: espera o cardápio para não contar os destaques da página inicial.
+    await expect(page.getByRole("heading", { level: 1, name: "Escolha seus cookies" })).toBeVisible();
+    await expect.poll(() => page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(5);
 
     await page.getByRole("tab", { name: /Caixas/ }).click();
     await expect(page).toHaveURL(/categoria=caixas/);
