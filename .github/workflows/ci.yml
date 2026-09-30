@@ -33,12 +33,15 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # Mesmo caminho base da publicação (usuario.github.io/doceria), para que
+      # erros de caminho apareçam antes do merge.
       - name: Build (validação)
         run: npm run build
         env:
           VITE_SUPABASE_URL: https://exemplo.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci
-          VITE_SITE_URL: https://loja.exemplo.com.br
+          VITE_SITE_URL: https://loja.exemplo.com.br/doceria
+          VITE_BASE_PATH: /doceria/
 
   e2e:
     name: Banco, integração e E2E (Supabase local)
