@@ -1,0 +1,83 @@
+-- Auxiliares dos testes pgTAP. Incluído por cada arquivo com \ir e criado
+-- dentro da transação do teste (desfeito no ROLLBACK final).
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+
+create schema if not exists tests;
+grant usage on schema tests to anon, authenticated, service_role;
+
+create or replace function tests.order_payload(
+  p_key text,
+  p_items jsonb,
+  p_expected integer,
+  p_method text default 'CASH',
+  p_type text default 'PICKUP',
+  p_address jsonb default null,
+  p_date date default null
+)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'idempotencyKey', p_key,
+    'customer', jsonb_build_object('name', 'Cliente Teste', 'phone', '+5528999887766', 'email', 'cliente@teste.com'),
+    'fulfillment', jsonb_strip_nulls(jsonb_build_object(
+      'type', p_type,
+      'date', coalesce(p_date, public.store_today()),
+      'period', 'AFTERNOON',
+      'address', p_address)),
+    'items', p_items,
+    'paymentMethod', p_method,
+    'expectedTotalCents', p_expected
+  )
+$$;
+
+create or replace function tests.item(p_product text, p_qty integer)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object('productId', p_product, 'quantity', p_qty)
+$$;
+
+create or replace function tests.address()
+returns jsonb
+language sql
+immutable
+as $$
+  select '{"street":"Rua Teste","number":"10","district":"Centro"}'::jsonb
+$$;
+
+-- Troca o usuário simulado (JWT).
+create or replace function tests.authenticate_as(p_user uuid)
+returns void
+language plpgsql
+as $$
+begin
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+end;
+$$;
+
+create or replace function tests.stock(p_product uuid)
+returns integer
+language sql
+security definer
+set search_path = ''
+as $$
+  select stock from public.products where id = p_product
+$$;
+
+grant execute on all functions in schema tests to anon, authenticated, service_role;
+
+-- Usuários do seed
+-- dono      33333333-3333-4333-8333-000000000001 (OWNER)
+-- atendente 33333333-3333-4333-8333-000000000002 (STAFF)
+-- Produtos do seed
+-- 22222222-2222-4222-8222-000000000001 Cookie Clássico  R$ 12,00  sem controle de estoque
+-- 22222222-2222-4222-8222-000000000003 Nutella          R$ 15,00  estoque 12
+-- 22222222-2222-4222-8222-000000000004 Red Velvet       R$ 15,00  estoque 8
+-- 22222222-2222-4222-8222-000000000005 Pistache         R$ 18,00  estoque 0
+-- Frete fixo do seed: R$ 5,00

@@ -1,0 +1,160 @@
+name: CI e deploy da loja
+
+# build, lint, typecheck, testes unitários, testes de banco (pgTAP),
+# integração e E2E (Playwright) rodam antes de qualquer publicação.
+# O deploy no GitHub Pages só acontece na main e só se tudo passar.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Na main não cancelamos execuções em andamento (evita deploy pela metade).
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, typecheck, testes unitários e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build (validação)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://exemplo.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci
+          VITE_SITE_URL: https://loja.exemplo.com.br
+
+  e2e:
+    name: Banco, integração e E2E (Supabase local)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Navegador do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Subir Supabase local
+        run: npx supabase start -x studio,imgproxy,vector,logflare,supavisor,postgres-meta,mailpit
+
+      - name: Variáveis locais (chaves do supabase status + stub de e-mail)
+        run: npm run env:test
+
+      # O stub só responde GET em /__emails; esperas com HEAD nunca terminam.
+      - name: Stub do EmailJS
+        timeout-minutes: 2
+        run: |
+          nohup node tests/stubs/email-stub.mjs > stub.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:54401/__emails > /dev/null && exit 0
+            sleep 1
+          done
+          echo "Stub do EmailJS não respondeu"; cat stub.log; exit 1
+
+      - name: Servir Edge Functions
+        timeout-minutes: 5
+        run: |
+          nohup npx supabase functions serve --env-file supabase/functions/.env > functions.log 2>&1 &
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS http://127.0.0.1:54321/functions/v1/create-order || true)
+            [ "$code" = "204" ] && exit 0
+            sleep 2
+          done
+          echo "Edge Functions não subiram"; cat functions.log; exit 1
+
+      - name: Testes de banco (pgTAP)
+        run: npx supabase test db
+
+      - name: Testes de integração
+        run: npm run test:integration
+
+      - name: Testes E2E
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: Relatório do Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+            functions.log
+            stub.log
+          retention-days: 7
+
+  deploy:
+    name: Publicar no GitHub Pages
+    needs: [quality, e2e]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Conferir configuração de produção
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+        run: |
+          missing=""
+          [ -z "$VITE_SUPABASE_URL" ] && missing="$missing VITE_SUPABASE_URL"
+          [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ] && missing="$missing VITE_SUPABASE_PUBLISHABLE_KEY"
+          [ -z "$VITE_SITE_URL" ] && missing="$missing VITE_SITE_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Configure em Settings > Secrets and variables > Actions > Variables:$missing"
+            exit 1
+          fi
+      - name: Build de produção
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/' }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
+          VITE_GA4_ID: ${{ vars.VITE_GA4_ID }}
+          VITE_META_PIXEL_ID: ${{ vars.VITE_META_PIXEL_ID }}
+          VITE_EMBED_PARENT_ORIGINS: ${{ vars.VITE_EMBED_PARENT_ORIGINS }}
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
