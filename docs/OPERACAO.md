@@ -92,7 +92,7 @@ Depois: publique as Edge Functions, configure os segredos, atualize as variávei
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
 | "Loja em configuração" | Build sem as variáveis `VITE_SUPABASE_*` | Configure as variáveis e rode o deploy |
-| Erro de conexão só ao finalizar | Origem da loja fora de `ALLOWED_ORIGINS` | Ajuste o segredo (só a origem, ex.: `https://usuario.github.io`) |
+| "Não foi possível falar com o servidor da loja" ao finalizar pedido ou em ações da equipe | Origem da loja fora de `ALLOWED_ORIGINS` (ou função fora do ar) | Ajuste o segredo (só a origem, ex.: `https://usuario.github.io`). Sem `ALLOWED_ORIGINS`, as funções usam a origem de `SITE_URL`; sem os dois, liberam qualquer origem e registram `cors.not_configured` no log |
 | E-mail não chega | Segredos do EmailJS ausentes, envio pelo servidor não liberado ou cota esgotada | Histórico do pedido no painel, logs `notify.email`, EmailJS > History |
 | Painel não avisa pedidos na hora | Tempo real desligado | O painel cai para atualização a cada 15 s; confira Database > Replication > `supabase_realtime` |
 | Pessoa da equipe não entra | Conta desativada, sem profile ou provedor Email desligado | Configurações > Equipe; Authentication > Providers |

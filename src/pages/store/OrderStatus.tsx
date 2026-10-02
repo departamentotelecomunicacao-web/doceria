@@ -210,7 +210,7 @@ export default function OrderStatusPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-cream-200 pt-5">
-          <button type="button" onClick={() => query.refetch()} className="inline-flex items-center gap-2 text-sm font-semibold text-cocoa-700 hover:text-cocoa-900">
+          <button type="button" onClick={() => query.refetch()} className="-ml-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-cocoa-700 hover:bg-cream-100 hover:text-cocoa-900">
             <RefreshCw className={cn("size-4", query.isFetching && "animate-spin")} aria-hidden /> Atualizar status
           </button>
           {order.emailSent && !justCreated && (

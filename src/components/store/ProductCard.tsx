@@ -37,7 +37,7 @@ export function ProductCard({ product, category, onAdd, buyHref, onBuyClick, vie
   );
 
   return (
-    <article className="group flex flex-col gap-3" data-testid="product-card" data-product-slug={product.slug}>
+    <article className="group flex min-w-0 flex-col gap-3" data-testid="product-card" data-product-slug={product.slug}>
       {buyHref ? (
         <a href={viewHref ?? buyHref} target="_blank" rel="noopener" onClick={() => onViewClick?.(product)} aria-label={`Ver ${product.name}`}>
           {imageBlock}
@@ -49,11 +49,11 @@ export function ProductCard({ product, category, onAdd, buyHref, onBuyClick, vie
       )}
 
       <div className="flex flex-1 flex-col gap-1.5 px-0.5">
-        <h3 className={cn("font-display leading-tight text-cocoa-900", compact ? "text-lg" : "text-xl")}>
+        <h3 className={cn("break-words font-display leading-tight text-cocoa-900", compact ? "text-lg" : "text-xl")}>
           {buyHref ? product.name : <Link to={detailHref} className="hover:underline hover:decoration-caramel-400 hover:underline-offset-4">{product.name}</Link>}
         </h3>
         {product.short_description && <p className="line-clamp-2 text-sm text-cocoa-600">{product.short_description}</p>}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-2">
           <Price cents={product.price_cents} />
           {buyHref ? (
             soldOut ? (

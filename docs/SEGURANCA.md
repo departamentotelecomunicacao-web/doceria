@@ -55,7 +55,7 @@ Funções: nada é executável por padrão; cada uma é liberada explicitamente.
 
 - [ ] `npm run test:db` verde.
 - [ ] Nenhum segredo no repositório (`git grep -n "sb_secret_\|service_role\|accessToken"` sem valores reais).
-- [ ] `ALLOWED_ORIGINS` só com a origem da loja.
+- [ ] `ALLOWED_ORIGINS` só com a origem da loja (sem ele, vale a origem de `SITE_URL`; sem os dois, qualquer origem e aviso `cors.not_configured` no log, para a loja não parar por esquecimento).
 - [ ] Auth: provedor Email **ligado** com "Allow new users to sign up" **desligado**, senha mínima de 10 caracteres, URLs com o endereço da loja.
 - [ ] EmailJS: "Use Private Key" marcado.
 - [ ] Environment `production` do GitHub com revisor obrigatório.

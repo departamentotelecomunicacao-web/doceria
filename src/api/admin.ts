@@ -335,7 +335,9 @@ export async function updateSettings(patch: Partial<StoreSettingsRow>): Promise<
 }
 
 // -----------------------------------------------------------------------------
-// Equipe (Edge Function admin-users, somente o dono)
+// Equipe: a lista vem direto da tabela profiles (RLS libera a leitura para a
+// equipe), então a aba abre mesmo se a Edge Function estiver fora do ar ou sem
+// configuração. Criar, alterar e trocar senha passam pela função admin-users.
 // -----------------------------------------------------------------------------
 export interface TeamMember {
   id: string;
@@ -344,8 +346,22 @@ export interface TeamMember {
   role: AppRole;
   isActive: boolean;
   createdAt: string;
-  lastSignInAt: string | null;
-  isSelf: boolean;
+}
+
+export async function listTeam(): Promise<TeamMember[]> {
+  const { data, error, status } = await client()
+    .from("profiles")
+    .select("id, full_name, email, role, is_active, created_at")
+    .order("created_at", { ascending: true });
+  if (error) throw fromPostgrest(error, status);
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    fullName: row.full_name as string,
+    email: row.email as string | null,
+    role: row.role as AppRole,
+    isActive: row.is_active as boolean,
+    createdAt: row.created_at as string,
+  }));
 }
 
 export async function teamAction<T>(body: Record<string, unknown>): Promise<T> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError, appErrorFromPostgrest } from "./errors.ts";
-import { corsHeaders, createHandler, parseAllowedOrigins, readJsonBody } from "./http.ts";
+import { corsHeaders, createHandler, parseAllowedOrigins, readJsonBody, resolveAllowedOrigins } from "./http.ts";
 
 describe("CORS", () => {
   const allowed = parseAllowedOrigins("https://loja.exemplo.com.br, http://localhost:5173/");
@@ -9,6 +9,13 @@ describe("CORS", () => {
     expect(corsHeaders("http://localhost:5173", allowed)["Access-Control-Allow-Origin"]).toBe("http://localhost:5173");
     expect(corsHeaders("https://malicioso.example", allowed)["Access-Control-Allow-Origin"]).toBeUndefined();
     expect(corsHeaders(null, allowed)["Access-Control-Allow-Origin"]).toBeUndefined();
+  });
+
+  it("sem ALLOWED_ORIGINS usa a origem de SITE_URL; sem os dois, não trava a loja", () => {
+    const envOf = (vars: Record<string, string>) => (name: string) => vars[name];
+    expect(resolveAllowedOrigins(envOf({ ALLOWED_ORIGINS: "https://a.example", SITE_URL: "https://b.example/x" }))).toEqual(["https://a.example"]);
+    expect(resolveAllowedOrigins(envOf({ SITE_URL: "https://usuario.github.io/doceria" }))).toEqual(["https://usuario.github.io"]);
+    expect(resolveAllowedOrigins(envOf({}))).toEqual(["*"]);
   });
 });
 

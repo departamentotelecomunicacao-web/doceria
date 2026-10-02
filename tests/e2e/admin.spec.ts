@@ -136,6 +136,26 @@ test.describe("painel", () => {
     await expect(page).toHaveURL(/\/admin\/pedidos/);
   });
 
+  test("aba Equipe abre mesmo com a função admin-users fora do ar", async ({ page }) => {
+    // Simula o problema visto em produção: a Edge Function recusada pelo navegador.
+    await page.route("**/functions/v1/admin-users", (route) => route.abort("failed"));
+    await adminLogin(page);
+    await page.goto("/admin/configuracoes?aba=equipe");
+    await page.getByRole("tab", { name: "Equipe" }).click();
+    await expect(page.getByText("Opcional. Use só se outra pessoa")).toBeVisible();
+    await expect(page.getByText("dono@doceria.local")).toBeVisible();
+    await expect(page.getByText("atendente@doceria.local")).toBeVisible();
+
+    // A ação, sim, depende da função: o erro precisa ser claro e não travar a tela.
+    await page.getByRole("button", { name: "Adicionar pessoa" }).click();
+    await page.getByLabel("Nome").fill("Pessoa Teste");
+    await page.getByLabel("E-mail (login)").fill(`equipe-${randomUUID().slice(0, 8)}@example.com`);
+    await page.getByLabel("Senha inicial").fill("senha-teste-123");
+    await page.getByRole("button", { name: "Criar conta" }).click();
+    await expect(page.getByText("Não foi possível falar com o servidor da loja")).toBeVisible();
+    await expect(page.getByText("dono@doceria.local")).toBeVisible();
+  });
+
   test("sessão expirada volta ao login com aviso", async ({ page }) => {
     await adminLogin(page);
     await page.waitForLoadState("networkidle");
