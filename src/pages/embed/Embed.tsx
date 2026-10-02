@@ -64,7 +64,7 @@ export default function Embed() {
   };
 
   return (
-    <div ref={rootRef} className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-4" data-testid="embed-root">
+    <div ref={rootRef} className="mx-auto w-full max-w-6xl px-4 py-4" data-testid="embed-root">
       {categories.length > 0 && (
         <div className="mb-5">
           <CategoryTabs categories={categories} active={active} onChange={setActive} />

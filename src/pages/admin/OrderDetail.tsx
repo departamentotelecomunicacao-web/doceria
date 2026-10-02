@@ -303,7 +303,7 @@ export default function OrderDetail() {
                 <dd className="flex items-center gap-2 tabular-nums">
                   {isDelivery ? formatBRL(order.delivery_fee_cents) : "grátis"}
                   {isDelivery && !closed && (
-                    <button type="button" className="text-xs font-semibold text-cocoa-700 underline" onClick={() => { setFeeInput(centsToInput(order.delivery_fee_cents)); setFeeOpen(true); }} data-testid="edit-fee">
+                    <button type="button" className="-my-2 inline-flex min-h-9 items-center rounded-full px-2 text-xs font-semibold text-cocoa-700 underline hover:bg-cream-100" onClick={() => { setFeeInput(centsToInput(order.delivery_fee_cents)); setFeeOpen(true); }} data-testid="edit-fee">
                       alterar
                     </button>
                   )}

@@ -34,10 +34,13 @@ export async function callFunction<T>(
     });
   } catch (error) {
     const aborted = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiError(0, aborted ? "TIMEOUT" : "NETWORK_ERROR",
-      aborted
-        ? "O servidor demorou para responder. Tente novamente."
-        : "Sem conexão com a internet ou servidor indisponível. Verifique sua conexão e tente novamente.");
+    if (aborted) throw new ApiError(0, "TIMEOUT", "O servidor demorou para responder. Tente novamente.");
+    // Com internet, a falha costuma ser o servidor recusando a origem do site
+    // (segredo ALLOWED_ORIGINS/SITE_URL da Edge Function) ou a função fora do ar.
+    const online = typeof navigator === "undefined" || navigator.onLine !== false;
+    throw new ApiError(0, "NETWORK_ERROR", online
+      ? "Não foi possível falar com o servidor da loja. Tente novamente em instantes."
+      : "Sem conexão com a internet. Verifique sua conexão e tente novamente.");
   } finally {
     clearTimeout(timeout);
   }

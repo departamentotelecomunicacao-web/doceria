@@ -26,12 +26,13 @@ export default function Settings() {
   return (
     <div>
       <PageHeader title="Configurações" description="A loja e o cardápio do Wix passam a usar os novos valores na hora." />
-      <div className="-mx-4 mb-6 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-        <div className="flex w-max gap-1 rounded-full bg-cream-200/70 p-1" role="tablist">
+      {/* No celular as quatro abas ficam em 2 x 2, todas visíveis (antes "Equipe" ficava escondida à direita). */}
+      <div className="mb-6">
+        <div className="grid grid-cols-2 gap-1 rounded-3xl bg-cream-200/70 p-1 sm:flex sm:w-max sm:rounded-full" role="tablist">
           {TABS.map((tab) => (
             <button key={tab.key} type="button" role="tab" aria-selected={active === tab.key}
               onClick={() => setParams({ aba: tab.key }, { replace: true })}
-              className={cn("h-9 rounded-full px-4 text-sm font-semibold", active === tab.key ? "bg-white text-cocoa-900 shadow-sm" : "text-cocoa-600 hover:text-cocoa-900")}>
+              className={cn("h-10 rounded-full px-4 text-sm font-semibold sm:h-9", active === tab.key ? "bg-white text-cocoa-900 shadow-sm" : "text-cocoa-600 hover:text-cocoa-900")}>
               {tab.label}
             </button>
           ))}

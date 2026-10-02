@@ -11,7 +11,29 @@ export function parseAllowedOrigins(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/** CORS restrito às origens configuradas em ALLOWED_ORIGINS. */
+/**
+ * Origens liberadas para o navegador. Ordem: ALLOWED_ORIGINS; se vazio, a
+ * origem de SITE_URL; se os dois estiverem vazios, qualquer origem (com aviso
+ * no log). Sem esse último recurso, esquecer o segredo derrubava a loja e o
+ * painel com um falso "sem conexão". As funções continuam exigindo login da
+ * equipe ou limite por IP, que é onde está a proteção de verdade.
+ */
+export function resolveAllowedOrigins(getEnv: EnvGetter): string[] {
+  const explicit = parseAllowedOrigins(getEnv("ALLOWED_ORIGINS"));
+  if (explicit.length > 0) return explicit;
+  const site = getEnv("SITE_URL");
+  if (site) {
+    try {
+      return [new URL(site).origin];
+    } catch {
+      // SITE_URL inválida: cai no próximo recurso.
+    }
+  }
+  log("cors.not_configured", { hint: "Defina ALLOWED_ORIGINS ou SITE_URL nos segredos das Edge Functions." });
+  return ["*"];
+}
+
+/** CORS restrito às origens permitidas (veja resolveAllowedOrigins). */
 export function corsHeaders(origin: string | null, allowed: string[]): Record<string, string> {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -92,7 +114,7 @@ export function createHandler(
   name: string,
   handler: (req: Request, cors: Record<string, string>) => Promise<Response>,
 ): (req: Request) => Promise<Response> {
-  const allowed = parseAllowedOrigins(getEnv("ALLOWED_ORIGINS"));
+  const allowed = resolveAllowedOrigins(getEnv);
   return async (req: Request) => {
     const cors = corsHeaders(req.headers.get("origin"), allowed);
     if (req.method === "OPTIONS") {

@@ -42,19 +42,19 @@ export default function Cart() {
       <div className="grid gap-10 lg:grid-cols-[1fr_22rem]">
         <ul className="divide-y divide-cream-200 border-y border-cream-200" data-testid="cart-lines">
           {reconciled.items.map((item) => (
-            <li key={item.product.id} className="flex gap-4 py-5" data-testid="cart-line" data-product-slug={item.product.slug}>
-              <Link to={`/produto/${item.product.slug}`} className="size-24 shrink-0 overflow-hidden rounded-2xl bg-cream-100 sm:size-28">
+            <li key={item.product.id} className="flex gap-3 py-5 sm:gap-4" data-testid="cart-line" data-product-slug={item.product.slug}>
+              <Link to={`/produto/${item.product.slug}`} className="size-20 shrink-0 overflow-hidden rounded-2xl bg-cream-100 min-[380px]:size-24 sm:size-28">
                 <ProductImage product={item.product} />
               </Link>
-              <div className="flex flex-1 flex-col gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <Link to={`/produto/${item.product.slug}`} className="font-display text-lg leading-tight hover:underline">{item.product.name}</Link>
+                  <div className="min-w-0">
+                    <Link to={`/produto/${item.product.slug}`} className="break-words font-display text-lg leading-tight hover:underline">{item.product.name}</Link>
                     <p className="text-sm text-cocoa-600"><Price cents={item.product.price_cents} size="sm" className="!text-cocoa-600" /> cada</p>
                   </div>
-                  <p className="font-semibold tabular-nums" data-testid="line-total">{formatBRL(item.lineTotalCents)}</p>
+                  <p className="shrink-0 font-semibold tabular-nums" data-testid="line-total">{formatBRL(item.lineTotalCents)}</p>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-3">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <QuantityStepper
                     size="sm"
                     value={item.quantity}
@@ -65,7 +65,7 @@ export default function Cart() {
                   <button
                     type="button"
                     onClick={() => cart.remove(item.product.id)}
-                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold text-cocoa-600 hover:bg-cream-100 hover:text-berry-700"
+                    className="-mr-3 inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold text-cocoa-600 hover:bg-cream-100 hover:text-berry-700"
                   >
                     <Trash2 className="size-4" aria-hidden /> Remover
                   </button>

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, UserPlus } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { ROLE_LABEL } from "@/admin/auth";
-import { teamAction, type StoreSettingsRow, type TeamMember } from "@/api/admin";
+import { ROLE_LABEL, useAdminAuth } from "@/admin/auth";
+import { listTeam, teamAction, type StoreSettingsRow, type TeamMember } from "@/api/admin";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
@@ -10,7 +10,7 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field"
 import { Dialog } from "@/components/ui/Dialog";
 import { ErrorState, LoadingBlock, Notice } from "@/components/ui/States";
 import { useToast } from "@/components/ui/Toast";
-import { formatDateTime, WEEKDAY_NAMES } from "@/lib/datetime";
+import { WEEKDAY_NAMES } from "@/lib/datetime";
 import { friendlyMessage } from "@/lib/errors";
 import { PAYMENT_METHOD_LABEL, PERIOD_LABEL } from "@/lib/labels";
 import { centsToInput, parseBRLToCents } from "@/lib/money";
@@ -242,7 +242,8 @@ const ROLES: AppRole[] = ["OWNER", "STAFF"];
 export function TeamTab() {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const team = useQuery({ queryKey: ["admin", "team"], queryFn: () => teamAction<{ members: TeamMember[] }>({ action: "list" }) });
+  const { profile } = useAdminAuth();
+  const team = useQuery({ queryKey: ["admin", "team"], queryFn: listTeam });
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({ fullName: "", email: "", role: "STAFF" as AppRole, password: "" });
   const [resetFor, setResetFor] = useState<TeamMember | null>(null);
@@ -260,28 +261,43 @@ export function TeamTab() {
   if (team.isLoading) return <LoadingBlock />;
   if (team.isError) return <ErrorState error={team.error} onRetry={() => team.refetch()} title="Não foi possível carregar a equipe" />;
 
+  const members = team.data ?? [];
+  const others = members.filter((member) => member.id !== profile?.id);
+
   return (
-    <Card title="Equipe" description="Cada pessoa tem a própria conta. Dono(a): tudo. Atendente: pedidos e disponibilidade dos produtos.">
+    <Card title="Equipe" description="Opcional. Use só se outra pessoa for atender os pedidos. Cada pessoa tem a própria conta. Dono(a): tudo. Atendente: pedidos e disponibilidade dos produtos.">
       <ul className="divide-y divide-cream-200">
-        {(team.data?.members ?? []).map((member) => (
-          <li key={member.id} className="flex flex-wrap items-center gap-3 py-3">
-            <div className="min-w-48 flex-1">
-              <p className="font-semibold">{member.fullName || member.email} {member.isSelf && <span className="text-xs text-cocoa-500">(você)</span>}</p>
-              <p className="text-sm text-cocoa-600">{member.email} · último acesso: {member.lastSignInAt ? formatDateTime(member.lastSignInAt) : "nunca"}</p>
-            </div>
-            <Select value={member.role} className="h-9 w-36" aria-label={`Papel de ${member.fullName}`} disabled={member.isSelf}
-              onChange={(e) => run.mutate({ action: "update", userId: member.id, role: e.target.value })}>
-              {ROLES.map((role) => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
-            </Select>
-            <Button size="sm" variant={member.isActive ? "ghost" : "success"} disabled={member.isSelf}
-              onClick={() => run.mutate({ action: "update", userId: member.id, isActive: !member.isActive })}>
-              {member.isActive ? "Desativar" : "Reativar"}
-            </Button>
-            <Button size="sm" variant="ghost" icon={<KeyRound className="size-4" />} onClick={() => { setNewPassword(""); setResetFor(member); }}>Senha</Button>
-            {!member.isActive && <Badge tone="danger">Desativado</Badge>}
-          </li>
-        ))}
+        {members.map((member) => {
+          const isSelf = member.id === profile?.id;
+          return (
+            <li key={member.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
+              <div className="min-w-0 flex-1 basis-48">
+                <p className="break-words font-semibold">
+                  {member.fullName || member.email} {isSelf && <span className="text-xs font-normal text-cocoa-500">(você)</span>}
+                </p>
+                <p className="break-all text-sm text-cocoa-600">{member.email} · {ROLE_LABEL[member.role]}</p>
+              </div>
+              {!isSelf && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={member.role} className="h-9 w-36" aria-label={`Papel de ${member.fullName}`}
+                    onChange={(e) => run.mutate({ action: "update", userId: member.id, role: e.target.value })}>
+                    {ROLES.map((role) => <option key={role} value={role}>{ROLE_LABEL[role]}</option>)}
+                  </Select>
+                  <Button size="sm" variant={member.isActive ? "ghost" : "success"}
+                    onClick={() => run.mutate({ action: "update", userId: member.id, isActive: !member.isActive })}>
+                    {member.isActive ? "Desativar" : "Reativar"}
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={<KeyRound className="size-4" />} onClick={() => { setNewPassword(""); setResetFor(member); }}>Senha</Button>
+                  {!member.isActive && <Badge tone="danger">Desativado</Badge>}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {others.length === 0 && !creating && (
+        <p className="text-sm text-cocoa-600">Por enquanto só você tem acesso ao painel. Isso basta para receber e confirmar pedidos.</p>
+      )}
       {creating ? (
         <div className="grid gap-3 rounded-2xl bg-cream-100 p-4 sm:grid-cols-2">
           <Field label="Nome">{({ id }) => <Input id={id} value={draft.fullName} onChange={(e) => setDraft({ ...draft, fullName: e.target.value })} />}</Field>
