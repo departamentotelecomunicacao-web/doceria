@@ -1,9 +1,10 @@
-import { ArrowRight, Bike, MessageCircle, ShoppingBag, Store } from "lucide-react";
+import "@fontsource/dm-serif-display/latin-400.css";
+import "@fontsource/dm-serif-display/latin-400-italic.css";
+import { ArrowRight, MessageCircle } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router";
-import { CookieIllustration } from "@/components/store/CookieIllustration";
 import { InstagramIcon } from "@/components/store/InstagramIcon";
 import { ProductCard, ProductCardSkeleton } from "@/components/store/ProductCard";
-import { ProductImage } from "@/components/store/ProductImage";
 import { ButtonLink, buttonClasses } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/States";
 import { useAddToCart } from "@/hooks/useAddToCart";
@@ -11,10 +12,18 @@ import { useCatalog, useStoreConfig } from "@/hooks/useStore";
 import { storeUrl } from "@/lib/env";
 import { PAYMENT_METHOD_LABEL } from "@/lib/labels";
 import { formatBRL } from "@/lib/money";
-import { productImageUrl } from "@/lib/rest";
 import { useDocumentMeta } from "@/lib/seo";
 import { whatsappLink } from "@/lib/whatsapp";
 import { useCart } from "@/store/cart";
+
+// Cookies decorativos da primeira dobra (public/marca), posições do design.
+const HERO_COOKIES: Array<{ src: string; float: "a" | "b"; style: CSSProperties }> = [
+  { src: "cookie-1.webp", float: "a", style: { top: "-4%", left: "50%", width: "clamp(84px, 20vw, 230px)", "--r": "8deg", "--float-duration": "7s" } as CSSProperties },
+  { src: "cookie-2.webp", float: "b", style: { top: "24%", left: "-2%", width: "clamp(78px, 18vw, 205px)", "--r": "-10deg", "--float-duration": "8.5s" } as CSSProperties },
+  { src: "cookie-3.webp", float: "a", style: { top: "30%", right: "-3%", width: "clamp(78px, 18vw, 200px)", "--r": "12deg", "--float-duration": "9s" } as CSSProperties },
+  { src: "cookie-4.webp", float: "b", style: { bottom: "-10%", left: "16%", width: "clamp(70px, 16vw, 185px)", "--r": "-6deg", "--float-duration": "7.8s" } as CSSProperties },
+  { src: "cookie-5.webp", float: "a", style: { bottom: "-6%", right: "20%", width: "clamp(48px, 11vw, 120px)", "--r": "14deg", "--float-duration": "6.5s" } as CSSProperties },
+];
 
 export default function Home() {
   const config = useStoreConfig();
@@ -33,9 +42,9 @@ export default function Home() {
   const products = catalog.data?.products ?? [];
   const featuredList = products.filter((product) => product.is_featured);
   const featured = (featuredList.length > 0 ? featuredList : products).slice(0, 4);
-  // Foto de capa escolhida no painel; sem ela, o primeiro destaque com foto.
-  const heroImageUrl = productImageUrl(config.data?.heroImagePath);
-  const heroProduct = heroImageUrl ? undefined : featured.find((product) => product.image_path) ?? featured[0];
+  // "Montar sua caixa": categoria de caixas, se existir; senão o cardápio completo.
+  const boxesCategory = (catalog.data?.categories ?? []).find((category) => category.slug.includes("caixa"));
+  const boxesHref = boxesCategory ? `/produtos?categoria=${boxesCategory.slug}` : "/produtos";
   const categoriesById = new Map((catalog.data?.categories ?? []).map((category) => [category.id, category]));
   const whatsapp = whatsappLink(config.data?.whatsappPhone, "Olá! Vim pelo site e tenho uma dúvida.");
   const instagramHandle = config.data?.instagramUrl?.replace(/\/$/, "").split("/").pop();
@@ -45,55 +54,42 @@ export default function Home() {
   return (
     <>
       {/* Destaque ----------------------------------------------------------
-          Texto à esquerda; à direita a foto de capa (ou o primeiro destaque)
-          em formato de arco (sol nascendo) com halo, sem cartão de produto. */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-butter-100/80 via-cream-50 to-cream-50">
-        <div className="container-page grid items-center gap-10 py-10 sm:py-14 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:py-20">
-          <div className="animate-slide-up space-y-6">
-            <p className="eyebrow">{storeName || " "}</p>
-            <h1 className="text-balance font-display text-[2.6rem] font-semibold leading-[1.02] text-cocoa-900 sm:text-6xl lg:text-7xl">
-              {config.isLoading ? <span className="skeleton block h-32 w-full rounded-2xl" /> : tagline}
-            </h1>
-            <div className="flex flex-wrap gap-3">
-              <ButtonLink to="/produtos" size="lg" icon={<ArrowRight className="size-5" aria-hidden />} className="flex-row-reverse">
-                Ver cardápio
-              </ButtonLink>
-              {cartCount > 0 && (
-                <ButtonLink to="/carrinho" size="lg" variant="secondary" icon={<ShoppingBag className="size-5" aria-hidden />}>
-                  Finalizar pedido ({cartCount})
-                </ButtonLink>
-              )}
+          Primeira dobra do design da marca: selo, título com cookies
+          flutuando ao redor, texto e um botão. Cookies são decorativos. */}
+      <section className="relative overflow-hidden bg-white">
+        <div className="mx-auto flex max-w-[1180px] flex-col items-center px-5 pb-12 pt-10 text-center sm:px-10 sm:pb-20 sm:pt-16 lg:pb-24">
+          <p className="mb-12 inline-flex items-center gap-2.5 rounded-full border border-[#E7DAC2] bg-white py-2 pl-2.5 pr-4 sm:mb-8">
+            <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-[#FFC73A] text-xs" aria-hidden>✦</span>
+            <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[1.2px] text-[#8A4B1E] sm:text-[12.5px] sm:tracking-[1.6px]">Feito à mão em pequenos lotes</span>
+          </p>
+
+          <div className="relative mx-auto w-full max-w-[920px]">
+            <div className="pointer-events-none absolute inset-x-[-4%] inset-y-[-14%] z-[1] sm:inset-x-[-8%] sm:bottom-[-18%]" aria-hidden>
+              {HERO_COOKIES.map((cookie, index) => (
+                <img key={cookie.src} src={`${import.meta.env.BASE_URL}marca/${cookie.src}`} alt="" decoding="async"
+                  className="hero-cookie" data-float={cookie.float} data-pos={index + 1} style={cookie.style} />
+              ))}
             </div>
-            {config.data && (
-              <ul className="flex flex-wrap gap-x-6 gap-y-2 pt-2 text-sm text-cocoa-700">
-                {config.data.deliveryEnabled && (
-                  <li className="inline-flex items-center gap-2">
-                    <Bike className="size-4" aria-hidden /> Entrega em {config.data.deliveryCity.split(" - ")[0]}: {formatBRL(config.data.deliveryFeeCents)}
-                  </li>
-                )}
-                {config.data.pickupEnabled && (
-                  <li className="inline-flex items-center gap-2"><Store className="size-4" aria-hidden /> Retirada grátis</li>
-                )}
-              </ul>
-            )}
+            <h1 className="relative z-[2] text-balance font-hero text-[clamp(44px,8.4vw,108px)] leading-[0.95] tracking-[-1.5px] text-[#2C1A0E] [text-shadow:0_0_18px_#fff,0_0_10px_#fff,0_0_40px_#ffffffee]">
+              Cookies artesanais,<br /><span className="italic text-[#F2A81C]">assados</span> com afeto.
+            </h1>
           </div>
 
-          <div className="relative mx-auto w-full max-w-[17rem] sm:max-w-sm lg:max-w-md" data-testid="hero-visual">
-            {/* Halo de sol e contorno pontilhado acompanhando o arco. O topo usa
-                raio em % (meia largura): "rounded-full" zeraria os cantos de baixo. */}
-            <div className="absolute -inset-[16%] rounded-full bg-[radial-gradient(circle,var(--color-butter-200)_0%,transparent_66%)]" aria-hidden />
-            <div className="absolute -inset-3 [border-top-left-radius:50%_41.667%] [border-top-right-radius:50%_41.667%] rounded-b-[2.25rem] border-2 border-dashed border-butter-300/80 sm:-inset-4" aria-hidden />
-            <div className="relative aspect-[5/6] overflow-hidden [border-top-left-radius:50%_41.667%] [border-top-right-radius:50%_41.667%] rounded-b-[2rem] bg-butter-200">
-              {heroImageUrl ? (
-                <img src={heroImageUrl} alt={storeName || "Foto de capa"} fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
-              ) : config.isLoading || catalog.isLoading ? (
-                <div className="skeleton h-full w-full" />
-              ) : heroProduct ? (
-                <ProductImage product={heroProduct} priority />
-              ) : (
-                <CookieIllustration seed="hero" name="cookie" className="h-full w-full" />
-              )}
-            </div>
+          <p className="relative z-[2] mt-12 max-w-[520px] text-pretty text-[clamp(16px,1.3vw,18px)] leading-relaxed text-[#5A4330] sm:mt-8">
+            Massa fermentada com calma, manteiga de verdade e chocolate que escorre quente. Cada fornada sai crocante por fora e macia no centro, do nosso forno direto pra sua mesa em Cachoeiro de Itapemirim.
+          </p>
+
+          <div className="relative z-[2] mt-7 flex flex-wrap items-center justify-center gap-3.5 sm:mt-9">
+            <Link to={boxesHref}
+              className="inline-flex items-center gap-2.5 rounded-full bg-[#2C1A0E] px-[30px] py-[17px] text-base font-bold text-[#F3E6C9] transition-colors hover:bg-[#452915]">
+              Montar sua caixa <span aria-hidden>→</span>
+            </Link>
+            {cartCount > 0 && (
+              <Link to="/carrinho"
+                className="inline-flex items-center rounded-full border border-[#E7DAC2] bg-[#FBF3E2] px-[26px] py-4 text-base font-bold text-[#2C1A0E] transition-colors hover:bg-[#F5E7C8]">
+                Finalizar pedido ({cartCount})
+              </Link>
+            )}
           </div>
         </div>
       </section>
