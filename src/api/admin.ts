@@ -2,6 +2,7 @@
 // ficam no banco (RLS + funções); aqui só chamamos e tipamos.
 import { ApiError, fromPostgrest } from "@/lib/errors";
 import { callFunction } from "@/lib/functions";
+import { buildOrderSearch } from "@/lib/orderSearch";
 import { getAdminClient } from "@/lib/supabase";
 import type { AppRole, Category, DayPeriod, FulfillmentType, OrderStatus, PaymentMethod, Product } from "@/types/domain";
 
@@ -67,7 +68,11 @@ const LIST_COLUMNS =
 export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderListRow[]; total: number }> {
   let query = client().from("orders").select(LIST_COLUMNS, { count: "exact" });
 
-  if (filters.view === "open") {
+  // Com busca, procura em todos os pedidos (a aba não esconde o resultado).
+  const search = buildOrderSearch(filters.search);
+  if (search.term) {
+    query = query.or(search.conditions.join(",")).order("created_at", { ascending: false });
+  } else if (filters.view === "open") {
     query = query
       .in("status", ["RECEIVED", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "READY_FOR_PICKUP"])
       .order("scheduled_date", { ascending: true })
@@ -79,13 +84,6 @@ export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderLi
     query = query.order("created_at", { ascending: false });
   }
 
-  const term = filters.search.trim().replace(/[%,()]/g, " ").trim();
-  if (term) {
-    const digits = term.replace(/\D/g, "");
-    const parts = [`code.ilike.%${term.toUpperCase()}%`, `customer_name.ilike.%${term}%`];
-    if (digits.length >= 4) parts.push(`customer_phone.ilike.%${digits}%`);
-    query = query.or(parts.join(","));
-  }
   const fromIndex = filters.page * filters.pageSize;
   const { data, error, status, count } = await query.range(fromIndex, fromIndex + filters.pageSize - 1);
   if (error) throw fromPostgrest(error, status);

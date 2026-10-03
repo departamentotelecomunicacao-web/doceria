@@ -168,6 +168,18 @@ test.describe("painel", () => {
     await expect(page.getByRole("dialog", { name: "Categorias" })).toBeVisible();
   });
 
+  test("busca pelo código com # encontra o pedido em qualquer aba", async ({ page }) => {
+    const product = await createTestProduct({ stock: null, priceCents: 1200 });
+    const order = await createOrder(product.id, 1, 1200);
+    await adminLogin(page, "atendente@doceria.local");
+    await page.getByRole("button", { name: "Todos" }).click();
+    await page.getByTestId("orders-search").fill(`#${order.code.toLowerCase()}`);
+    await expect(page.getByText("Buscando em todos os pedidos.")).toBeVisible();
+    await expect(page.locator(`[data-order-code="${order.code}"]`).first()).toBeVisible();
+    await page.getByTestId("orders-search").fill("#");
+    await expect(page.getByText("Buscando em todos os pedidos.")).toHaveCount(0);
+  });
+
   test("atendente não vê configurações", async ({ page }) => {
     await adminLogin(page, "atendente@doceria.local");
     await expect(page.getByRole("link", { name: "Pedidos" }).first()).toBeVisible();
