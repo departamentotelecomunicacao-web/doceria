@@ -58,6 +58,8 @@ export interface StoreConfig {
   today: string;
   paymentMethods: PaymentMethod[];
   minOrderCents: number;
+  /** Foto de capa da página inicial (Storage). Vazia: primeiro produto em destaque. */
+  heroImagePath: string | null;
 }
 
 export interface CreateOrderResponse {

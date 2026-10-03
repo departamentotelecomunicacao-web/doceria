@@ -11,6 +11,7 @@ import { useCatalog, useStoreConfig } from "@/hooks/useStore";
 import { storeUrl } from "@/lib/env";
 import { PAYMENT_METHOD_LABEL } from "@/lib/labels";
 import { formatBRL } from "@/lib/money";
+import { productImageUrl } from "@/lib/rest";
 import { useDocumentMeta } from "@/lib/seo";
 import { whatsappLink } from "@/lib/whatsapp";
 import { useCart } from "@/store/cart";
@@ -32,7 +33,9 @@ export default function Home() {
   const products = catalog.data?.products ?? [];
   const featuredList = products.filter((product) => product.is_featured);
   const featured = (featuredList.length > 0 ? featuredList : products).slice(0, 4);
-  const heroProduct = featured.find((product) => product.image_path) ?? featured[0];
+  // Foto de capa escolhida no painel; sem ela, o primeiro destaque com foto.
+  const heroImageUrl = productImageUrl(config.data?.heroImagePath);
+  const heroProduct = heroImageUrl ? undefined : featured.find((product) => product.image_path) ?? featured[0];
   const categoriesById = new Map((catalog.data?.categories ?? []).map((category) => [category.id, category]));
   const whatsapp = whatsappLink(config.data?.whatsappPhone, "Olá! Vim pelo site e tenho uma dúvida.");
   const instagramHandle = config.data?.instagramUrl?.replace(/\/$/, "").split("/").pop();
@@ -76,7 +79,11 @@ export default function Home() {
           <div className="relative mx-auto w-full max-w-md lg:max-w-none">
             <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-butter-100" aria-hidden />
             <div className="aspect-[4/5] overflow-hidden rounded-[2rem] shadow-[var(--shadow-lift)]">
-              {heroProduct ? (
+              {heroImageUrl ? (
+                <img src={heroImageUrl} alt={storeName || "Foto de capa"} fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
+              ) : config.isLoading ? (
+                <div className="skeleton h-full w-full" />
+              ) : heroProduct ? (
                 <ProductImage product={heroProduct} priority />
               ) : (
                 <CookieIllustration seed="hero" name="cookie" className="h-full w-full" />

@@ -1,6 +1,6 @@
 begin;
 \ir _setup.psql
-select plan(30);
+select plan(33);
 
 select is(
   (select count(*)::int from pg_tables where schemaname = 'public' and not rowsecurity),
@@ -33,6 +33,7 @@ select ok(public.get_public_store_config() ->> 'storeName' is not null, 'anon l�
 select ok(
   not (public.get_public_store_config() ? 'pixKey') and not (public.get_public_store_config() ? 'notifyEmail'),
   'configuração pública não expõe PIX nem e-mail interno');
+select ok(public.get_public_store_config() ? 'heroImagePath', 'configuração pública traz a foto de capa (pode ser nula)');
 select is(public.get_public_order('abc'), null, 'token malformado devolve null');
 select is(public.get_public_order(repeat('a', 48)), null, 'token inexistente devolve null');
 
@@ -105,6 +106,10 @@ select ok(
       and a.defaclrole = 'postgres'::regrole  -- papel das migrations e do SQL Editor
       and array_to_string(a.defaclacl, ',') ~ '(^|,)anon=') = 0,
   'tabelas novas nascem sem acesso para anon');
+
+reset role;
+select throws_ok($$update public.products set sort_order = 0$$, '23514', null, 'ordem do produto começa em 1');
+select throws_ok($$update public.categories set sort_order = -2$$, '23514', null, 'ordem da categoria começa em 1');
 
 select * from finish();
 rollback;

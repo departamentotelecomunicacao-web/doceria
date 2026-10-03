@@ -4,8 +4,8 @@ import { createTestProduct, expect, test } from "./fixtures";
 // elemento HTML do Wix) e verifica que nada depende do domínio pai.
 test.describe("cardápio incorporado (Wix)", () => {
   test("carrega no iframe, mede a altura e abre a loja para comprar", async ({ page, context }) => {
-    // Ordem negativa: aparece entre os primeiros do cardápio incorporado.
-    const product = await createTestProduct({ stock: 5, priceCents: 2500, sortOrder: -1 });
+    // Ordem 1 e nome começando com "A": aparece entre os primeiros do cardápio incorporado.
+    const product = await createTestProduct({ stock: 5, priceCents: 2500, sortOrder: 1, name: `A Teste ${Date.now().toString(36)}` });
     await page.setContent(`
       <html><body style="margin:0;background:#fff">
         <h1>Site institucional</h1>
