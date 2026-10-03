@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Field";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/States";
 import { formatScheduleShort, formatTime, storeDateKey } from "@/lib/datetime";
 import { formatBRL } from "@/lib/money";
+import { buildOrderSearch } from "@/lib/orderSearch";
 
 const VIEWS: { key: OrderView; label: string }[] = [
   { key: "open", label: "Em aberto" },
@@ -44,6 +45,7 @@ export default function Orders() {
   const page = Math.max(0, Number(params.get("pagina") ?? 0) || 0);
   const [search, setSearch] = useState(params.get("q") ?? "");
   const debouncedSearch = useDebounced(search);
+  const searching = buildOrderSearch(debouncedSearch).term !== "";
   const today = storeDateKey(new Date());
 
   const setParam = (key: string, value: string | null) => {
@@ -110,9 +112,10 @@ export default function Orders() {
         <label className="relative sm:w-72">
           <span className="sr-only">Buscar por cliente, WhatsApp ou código</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-cocoa-400" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cliente, WhatsApp ou código" className="pl-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cliente, WhatsApp ou código" className="pl-9" type="search" data-testid="orders-search" />
         </label>
       </div>
+      {searching && <p className="-mt-2 text-sm text-cocoa-600">Buscando em todos os pedidos.</p>}
 
       {query.isError && !query.data ? (
         <ErrorState error={query.error} onRetry={() => query.refetch()} title="Não foi possível carregar os pedidos" />
@@ -122,8 +125,8 @@ export default function Orders() {
         <div className="card">
           <EmptyState
             icon={<ClipboardList className="size-6" aria-hidden />}
-            title={view === "open" ? "Nenhum pedido em aberto" : "Nenhum pedido encontrado"}
-            description={view === "open" ? "Quando chegar um pedido, ele aparece aqui com um aviso sonoro." : "Ajuste a busca ou o filtro."}
+            title={searching ? "Nenhum pedido encontrado" : view === "open" ? "Nenhum pedido em aberto" : "Nenhum pedido encontrado"}
+            description={searching ? "Confira o código (ex.: NPWU2F), o nome ou o WhatsApp." : view === "open" ? "Quando chegar um pedido, ele aparece aqui com um aviso sonoro." : "Ajuste a busca ou o filtro."}
           />
         </div>
       ) : (

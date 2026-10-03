@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ImagePlus, Trash2 } from "lucide-react";
+import { ArrowLeft, ImagePlus, Tags, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { useAdminAuth } from "@/admin/auth";
@@ -7,10 +7,12 @@ import {
   deleteProduct,
   getAdminProduct,
   listAdminCategories,
+  listAdminProducts,
   removeProductPhoto,
   saveProduct,
   uploadProductPhoto,
 } from "@/api/admin";
+import { CategoryManager } from "@/components/admin/CategoryManager";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { ProductImage } from "@/components/store/ProductImage";
 import { Button } from "@/components/ui/Button";
@@ -45,7 +47,7 @@ function fromProduct(product: Product | null): FormState {
     description: product?.description ?? "",
     price: centsToInput(product?.price_cents),
     stock: product?.stock === null || product?.stock === undefined ? "" : String(product.stock),
-    sort_order: String(product?.sort_order ?? 0),
+    sort_order: product ? String(product.sort_order) : "",
     is_active: product?.is_active ?? true,
     is_featured: product?.is_featured ?? false,
   };
@@ -124,6 +126,10 @@ export default function ProductEdit() {
   const queryClient = useQueryClient();
   const product = useQuery({ queryKey: ["admin", "product", productId], queryFn: () => getAdminProduct(productId!), enabled: !isNew });
   const categories = useQuery({ queryKey: ["admin", "categories"], queryFn: listAdminCategories });
+  // Produto novo entra no fim do cardápio (maior ordem + 1); a ordem começa em 1.
+  const products = useQuery({ queryKey: ["admin", "products"], queryFn: listAdminProducts, enabled: isNew });
+  const nextSortOrder = Math.max(0, ...(products.data ?? []).map((p) => p.sort_order)) + 1;
+  const [categoryOpen, setCategoryOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => fromProduct(null));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const loadedId = useRef<string | null>(null);
@@ -177,6 +183,8 @@ export default function ProductEdit() {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) nextErrors.slug = "Use letras minúsculas, números e hífens.";
     if (!price || price <= 0) nextErrors.price = "Preço inválido.";
     if (stock !== null && (!Number.isInteger(stock) || stock < 0)) nextErrors.stock = "Quantidade inválida.";
+    const sortOrder = form.sort_order.trim() === "" ? (isNew ? nextSortOrder : 1) : Number(form.sort_order);
+    if (!Number.isInteger(sortOrder) || sortOrder < 1) nextErrors.sort_order = "Use um número inteiro a partir de 1.";
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       return;
@@ -189,7 +197,7 @@ export default function ProductEdit() {
       description: form.description.trim(),
       price_cents: price!,
       stock,
-      sort_order: Number(form.sort_order) || 0,
+      sort_order: sortOrder,
       is_active: form.is_active,
       is_featured: form.is_featured,
     });
@@ -209,14 +217,20 @@ export default function ProductEdit() {
               {({ id }) => <Input id={id} value={form.name} error={errors.name} maxLength={80}
                 onChange={(e) => { set("name", e.target.value); if (isNew) set("slug", slugify(e.target.value)); }} data-testid="product-name" />}
             </Field>
-            <Field label="Categoria">
-              {({ id }) => (
-                <Select id={id} value={form.category_id} onChange={(e) => set("category_id", e.target.value)}>
-                  <option value="">Sem categoria</option>
-                  {(categories.data ?? []).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </Select>
-              )}
-            </Field>
+            <div className="space-y-1.5">
+              <Field label="Categoria">
+                {({ id }) => (
+                  <Select id={id} value={form.category_id} onChange={(e) => set("category_id", e.target.value)}>
+                    <option value="">Sem categoria</option>
+                    {(categories.data ?? []).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </Select>
+                )}
+              </Field>
+              <button type="button" onClick={() => setCategoryOpen(true)}
+                className="-ml-2 inline-flex min-h-9 items-center gap-1.5 rounded-full px-2 text-sm font-semibold text-cocoa-700 hover:bg-cream-100 hover:text-cocoa-900">
+                <Tags className="size-4" aria-hidden /> {(categories.data ?? []).length === 0 ? "Criar categoria" : "Gerenciar categorias"}
+              </button>
+            </div>
             <Field label="Endereço na loja" error={errors.slug} hint={`/produto/${form.slug || "…"}`}>
               {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={form.slug} error={errors.slug} onChange={(e) => set("slug", slugify(e.target.value))} />}
             </Field>
@@ -240,8 +254,9 @@ export default function ProductEdit() {
               {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} inputMode="numeric" value={form.stock} error={errors.stock}
                 onChange={(e) => set("stock", e.target.value.replace(/[^\d]/g, ""))} placeholder="sem limite" />}
             </Field>
-            <Field label="Ordem no cardápio" hint="Menor aparece primeiro.">
-              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="number" value={form.sort_order} onChange={(e) => set("sort_order", e.target.value)} />}
+            <Field label="Ordem no cardápio" error={errors.sort_order} hint="1 aparece primeiro. Vazio: entra no fim do cardápio.">
+              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="number" min={1} step={1} inputMode="numeric" value={form.sort_order} error={errors.sort_order}
+                onChange={(e) => set("sort_order", e.target.value.replace(/[^\d]/g, ""))} placeholder={isNew ? String(nextSortOrder) : "1"} data-testid="product-sort-order" />}
             </Field>
             <Checkbox checked={form.is_active} onChange={(value) => set("is_active", value)} label="Aparece no cardápio" description="Desmarque para esconder sem excluir." />
             <Checkbox checked={form.is_featured} onChange={(value) => set("is_featured", value)} label="Destaque na página inicial" />
@@ -258,6 +273,7 @@ export default function ProductEdit() {
           </div>
         </div>
       </form>
+      <CategoryManager open={categoryOpen} onClose={() => setCategoryOpen(false)} />
     </div>
   );
 }

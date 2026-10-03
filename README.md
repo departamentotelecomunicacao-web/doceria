@@ -25,8 +25,8 @@ Mais detalhes: [ARCHITECTURE.md](ARCHITECTURE.md) · Wix: [docs/WIX.md](docs/WIX
 
 **Painel** (`/admin`), feito para o celular:
 - **Pedidos:** resumo do dia, lista "Em aberto / Para hoje / Todos", aviso sonoro e atualização em tempo real. No pedido: botão do próximo passo (Confirmar, Em preparo, Saiu para entrega ou Pronto para retirada, Concluir), cancelar (devolve o estoque), marcar pago, ajustar o frete daquele pedido, anotações, histórico, e-mails enviados e **Avisar no WhatsApp** com a mensagem do status pronta.
-- **Produtos:** foto, preço, descrição, categoria, destaque; disponível ou fora do cardápio; quantidade opcional (vazio = sem limite).
-- **Configurações** (só o dono): dados da loja, pausar pedidos, taxa de entrega, retirada, dias e períodos, PIX, avisos por e-mail e equipe.
+- **Produtos:** foto, preço, descrição, categoria (botão **Categorias** ou "Gerenciar categorias" no cadastro), ordem no cardápio a partir de 1, destaque; disponível ou fora do cardápio; quantidade opcional (vazio = sem limite).
+- **Configurações** (só o dono): dados da loja, foto de capa da página inicial, pausar pedidos, taxa de entrega, retirada, dias e períodos, PIX, avisos por e-mail e equipe.
 
 | Papel | Pode |
 |---|---|

@@ -34,7 +34,7 @@
    select id, 'Nome Completo', email, 'OWNER', true from auth.users where email = 'email@dominio.com';
    ```
    Alternativa pela linha de comando: `npm run owner:create` (veja o cabeçalho de `scripts/create-owner.mjs`). As demais contas o dono cria em Configurações > Equipe.
-7. **Painel > Configurações**: WhatsApp, e-mail que recebe os pedidos, taxa de entrega, endereço de retirada, dias e períodos, chave PIX. Depois, **Produtos**.
+7. **Painel > Configurações**: WhatsApp, e-mail que recebe os pedidos, foto de capa, taxa de entrega, endereço de retirada, dias e períodos, chave PIX. Depois, **Produtos** (as categorias ficam no botão **Categorias**).
 
 Pela linha de comando (alternativa ao workflow):
 

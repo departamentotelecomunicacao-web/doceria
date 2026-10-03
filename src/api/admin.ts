@@ -2,6 +2,7 @@
 // ficam no banco (RLS + funções); aqui só chamamos e tipamos.
 import { ApiError, fromPostgrest } from "@/lib/errors";
 import { callFunction } from "@/lib/functions";
+import { buildOrderSearch } from "@/lib/orderSearch";
 import { getAdminClient } from "@/lib/supabase";
 import type { AppRole, Category, DayPeriod, FulfillmentType, OrderStatus, PaymentMethod, Product } from "@/types/domain";
 
@@ -67,7 +68,11 @@ const LIST_COLUMNS =
 export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderListRow[]; total: number }> {
   let query = client().from("orders").select(LIST_COLUMNS, { count: "exact" });
 
-  if (filters.view === "open") {
+  // Com busca, procura em todos os pedidos (a aba não esconde o resultado).
+  const search = buildOrderSearch(filters.search);
+  if (search.term) {
+    query = query.or(search.conditions.join(",")).order("created_at", { ascending: false });
+  } else if (filters.view === "open") {
     query = query
       .in("status", ["RECEIVED", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "READY_FOR_PICKUP"])
       .order("scheduled_date", { ascending: true })
@@ -79,13 +84,6 @@ export async function listOrders(filters: OrderFilters): Promise<{ rows: OrderLi
     query = query.order("created_at", { ascending: false });
   }
 
-  const term = filters.search.trim().replace(/[%,()]/g, " ").trim();
-  if (term) {
-    const digits = term.replace(/\D/g, "");
-    const parts = [`code.ilike.%${term.toUpperCase()}%`, `customer_name.ilike.%${term}%`];
-    if (digits.length >= 4) parts.push(`customer_phone.ilike.%${digits}%`);
-    query = query.or(parts.join(","));
-  }
   const fromIndex = filters.page * filters.pageSize;
   const { data, error, status, count } = await query.range(fromIndex, fromIndex + filters.pageSize - 1);
   if (error) throw fromPostgrest(error, status);
@@ -283,6 +281,30 @@ export async function uploadProductPhoto(
   return path;
 }
 
+/** Foto de capa da página inicial (pasta capa/ do mesmo bucket das fotos). */
+export async function uploadHeroPhoto(
+  currentPath: string | null,
+  file: { blob: Blob; extension: string; contentType: string },
+): Promise<string> {
+  const storage = client().storage.from(BUCKET);
+  const path = `capa/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${file.extension}`;
+  const upload = await storage.upload(path, file.blob, { contentType: file.contentType, cacheControl: "31536000", upsert: false });
+  if (upload.error) throw new ApiError(400, "UPLOAD_FAILED", "Não foi possível enviar a foto. Verifique o arquivo e tente novamente.");
+  try {
+    await updateSettings({ hero_image_path: path });
+  } catch (error) {
+    await storage.remove([path]);
+    throw error;
+  }
+  if (currentPath) await storage.remove([currentPath]);
+  return path;
+}
+
+export async function removeHeroPhoto(currentPath: string | null): Promise<void> {
+  await updateSettings({ hero_image_path: null });
+  if (currentPath) await client().storage.from(BUCKET).remove([currentPath]);
+}
+
 export async function removeProductPhoto(product: Pick<Product, "id" | "image_path">): Promise<void> {
   const { error, status } = await client().from("products").update({ image_path: null }).eq("id", product.id);
   if (error) throw fromPostgrest(error, status);
@@ -316,6 +338,7 @@ export interface StoreSettingsRow {
   pix_holder: string;
   min_order_cents: number;
   email_customer_on_status: boolean;
+  hero_image_path: string | null;
   updated_at: string;
 }
 

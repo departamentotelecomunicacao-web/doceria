@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, UserPlus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ImagePlus, KeyRound, Trash2, UserPlus } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 import { ROLE_LABEL, useAdminAuth } from "@/admin/auth";
-import { listTeam, teamAction, type StoreSettingsRow, type TeamMember } from "@/api/admin";
+import { listTeam, removeHeroPhoto, teamAction, uploadHeroPhoto, type StoreSettingsRow, type TeamMember } from "@/api/admin";
+import { CookieIllustration } from "@/components/store/CookieIllustration";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
@@ -12,8 +13,10 @@ import { ErrorState, LoadingBlock, Notice } from "@/components/ui/States";
 import { useToast } from "@/components/ui/Toast";
 import { WEEKDAY_NAMES } from "@/lib/datetime";
 import { friendlyMessage } from "@/lib/errors";
+import { compressImage, validateImageFile } from "@/lib/images";
 import { PAYMENT_METHOD_LABEL, PERIOD_LABEL } from "@/lib/labels";
 import { centsToInput, parseBRLToCents } from "@/lib/money";
+import { productImageUrl } from "@/lib/rest";
 import type { AppRole, DayPeriod, PaymentMethod } from "@/types/domain";
 import { formatBrazilPhone, isEmail, normalizeBrazilPhone } from "@shared/validation.ts";
 import { useSettingsForm } from "./useSettingsForm";
@@ -109,7 +112,70 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
           </Field>
         </div>
       </Card>
+
+      <HeroPhotoCard path={settings.hero_image_path} />
     </div>
+  );
+}
+
+/** Foto de capa da página inicial: salva na hora, sem depender do botão "Salvar". */
+function HeroPhotoCard({ path }: { path: string | null }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const url = productImageUrl(path);
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
+    void queryClient.invalidateQueries({ queryKey: ["store-config"] });
+  };
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      toast.error("Foto não aceita", invalid);
+      return;
+    }
+    setUploading(true);
+    try {
+      const compressed = await compressImage(file, 1600, 0.84);
+      await uploadHeroPhoto(path, { blob: compressed.blob, extension: compressed.extension, contentType: compressed.contentType });
+      toast.success("Foto de capa atualizada");
+    } catch (error) {
+      toast.error("Falha no envio", friendlyMessage(error));
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+      refresh();
+    }
+  };
+
+  const remove = useMutation({
+    mutationFn: () => removeHeroPhoto(path),
+    onSuccess: () => { toast.success("Foto de capa removida"); refresh(); },
+    onError: (error) => toast.error("Não foi possível remover", friendlyMessage(error)),
+  });
+
+  return (
+    <Card title="Foto de capa" description="A foto grande do topo da página inicial. Prefira foto vertical (em pé), com o cookie ou a marca no centro.">
+      <div className="aspect-[4/5] w-full max-w-56 overflow-hidden rounded-2xl bg-cream-100">
+        {url ? <img src={url} alt="Foto de capa atual" className="h-full w-full object-cover" /> : <CookieIllustration seed="hero" name="cookie" className="h-full w-full" />}
+      </div>
+      {!path && <Notice tone="info">Sem foto de capa, a página inicial mostra o primeiro produto marcado como destaque.</Notice>}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" loading={uploading} icon={<ImagePlus className="size-4" />} onClick={() => inputRef.current?.click()} data-testid="upload-hero">
+          {path ? "Trocar foto de capa" : "Enviar foto de capa"}
+        </Button>
+        {path && (
+          <Button size="sm" variant="ghost" className="text-berry-700" loading={remove.isPending} icon={<Trash2 className="size-4" />}
+            onClick={() => window.confirm("Remover a foto de capa?") && remove.mutate()}>
+            Remover
+          </Button>
+        )}
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/heic" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+      </div>
+    </Card>
   );
 }
 
