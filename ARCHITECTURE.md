@@ -41,7 +41,7 @@ Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). M
 | `20260930120100_schema.sql` | Tabelas, tipos e restrições |
 | `20260930120200_functions.sql` | Regras: agenda, pedido, página pública, ações do painel, limite por IP |
 | `20260930120300_security.sql` | RLS, permissões, fotos e tempo real |
-| `20261003120000_capa_e_ordem.sql` | Foto de capa da página inicial; ordem do cardápio a partir de 1 |
+| `20261003120000_capa_e_ordem.sql` | Ordem do cardápio a partir de 1 (e a coluna `hero_image_path`, hoje sem uso) |
 
 | Tabela | Uso |
 |---|---|

@@ -8,6 +8,7 @@
  */
 @theme {
   --font-display: "Fraunces Variable", ui-serif, Georgia, "Times New Roman", serif;
+  --font-hero: "DM Serif Display", ui-serif, Georgia, serif;
   --font-sans: "Manrope Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --color-cream-50: #fcf9f4;
@@ -157,4 +158,32 @@ html.embed-mode.embed-bg-cream body {
 @media print {
   .no-print { display: none !important; }
   body { background: #fff; }
+}
+
+/* Primeira dobra: cookies flutuando (rotação base em --r). O bloco de
+   prefers-reduced-motion acima desliga a animação para quem prefere. */
+@keyframes hero-float-a {
+  0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+  50% { transform: translateY(-16px) rotate(calc(var(--r, 0deg) + 4deg)); }
+}
+@keyframes hero-float-b {
+  0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+  50% { transform: translateY(14px) rotate(calc(var(--r, 0deg) - 5deg)); }
+}
+.hero-cookie {
+  position: absolute;
+  height: auto;
+  transform: rotate(var(--r, 0deg));
+  filter: drop-shadow(0 18px 20px rgb(107 66 28 / 0.27));
+  animation: hero-float-a var(--float-duration, 7s) ease-in-out infinite;
+}
+.hero-cookie[data-float="b"] { animation-name: hero-float-b; }
+/* Celular: cookies menores, nos cantos do título, para não cobrir as letras. */
+@media (max-width: 639px) {
+  .hero-cookie { width: 64px !important; }
+  .hero-cookie[data-pos="1"] { top: -34% !important; left: auto !important; right: 4% !important; }
+  .hero-cookie[data-pos="2"] { top: -30% !important; left: 2% !important; }
+  .hero-cookie[data-pos="3"] { top: auto !important; bottom: -30% !important; right: 0 !important; width: 58px !important; }
+  .hero-cookie[data-pos="4"] { display: none; }
+  .hero-cookie[data-pos="5"] { bottom: -26% !important; left: 4% !important; right: auto !important; width: 40px !important; }
 }

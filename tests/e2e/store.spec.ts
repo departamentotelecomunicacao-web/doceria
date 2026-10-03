@@ -4,18 +4,17 @@ test.describe("loja", () => {
   test("cliente abre a loja e vê os produtos", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Ver cardápio", exact: true })).toBeVisible();
     await expect(page.getByTestId("product-card").first()).toBeVisible();
 
-    await page.getByRole("link", { name: "Ver cardápio", exact: true }).click();
-    await expect(page).toHaveURL(/\/produtos/);
+    // "Montar sua caixa" leva direto à categoria de caixas.
+    await page.getByRole("link", { name: /Montar sua caixa/ }).click();
+    await expect(page).toHaveURL(/\/produtos\?categoria=caixas/);
     // A URL muda antes da troca de tela: espera o cardápio para não contar os destaques da página inicial.
     await expect(page.getByRole("heading", { level: 1, name: "Escolha seus cookies" })).toBeVisible();
-    await expect.poll(() => page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(5);
-
-    await page.getByRole("tab", { name: /Caixas/ }).click();
-    await expect(page).toHaveURL(/categoria=caixas/);
     await expect(page.getByTestId("product-card")).toHaveCount(1);
+
+    await page.getByRole("tab", { name: /Todos/ }).click();
+    await expect.poll(() => page.getByTestId("product-card").count()).toBeGreaterThanOrEqual(5);
   });
 
   test("cliente adiciona produto, altera quantidade e remove", async ({ page }) => {

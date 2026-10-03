@@ -128,31 +128,6 @@ test.describe("painel", () => {
     }
   });
 
-  test("dono define a foto de capa e a página inicial usa essa foto", async ({ page }) => {
-    // PNG 8x8 válido, gerado em memória (sem arquivo de fixture).
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGP4f8IGK2IYWhIAf3aAwTlNt10AAAAASUVORK5CYII=",
-      "base64",
-    );
-    await adminLogin(page);
-    await page.goto("/admin/configuracoes?aba=loja");
-    await expect(page.getByText("Sem foto de capa, a página inicial mostra")).toBeVisible();
-    await page.locator('input[type="file"]').setInputFiles({ name: "capa.png", mimeType: "image/png", buffer: png });
-    await expect(page.getByText("Foto de capa atualizada")).toBeVisible();
-    await expect(page.getByRole("img", { name: "Foto de capa atual" })).toHaveAttribute("src", /product-images\/capa\//);
-
-    try {
-      await page.goto("/");
-      await expect(page.locator('img[src*="/product-images/capa/"]').first()).toBeVisible();
-      await expect(page.getByText("Destaque", { exact: true })).toHaveCount(0);
-    } finally {
-      await page.goto("/admin/configuracoes?aba=loja");
-      page.once("dialog", (dialog) => void dialog.accept());
-      await page.getByRole("button", { name: "Remover" }).click();
-      await expect(page.getByText("Foto de capa removida")).toBeVisible();
-    }
-  });
-
   test("produto novo entra no fim do cardápio e a ordem não aceita zero", async ({ page }) => {
     await adminLogin(page);
     await page.goto("/admin/produtos/novo");
