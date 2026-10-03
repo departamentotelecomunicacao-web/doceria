@@ -54,15 +54,10 @@ export default function Home() {
   return (
     <>
       {/* Destaque ----------------------------------------------------------
-          Primeira dobra do design da marca: selo, título com cookies
-          flutuando ao redor, texto e um botão. Cookies são decorativos. */}
+          Primeira dobra do design da marca: título com cookies flutuando ao
+          redor, texto e um botão. Cookies são decorativos. */}
       <section className="relative overflow-hidden bg-white">
-        <div className="mx-auto flex max-w-[1180px] flex-col items-center px-5 pb-12 pt-10 text-center sm:px-10 sm:pb-20 sm:pt-16 lg:pb-24">
-          <p className="mb-12 inline-flex items-center gap-2.5 rounded-full border border-[#E7DAC2] bg-white py-2 pl-2.5 pr-4 sm:mb-8">
-            <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-[#FFC73A] text-xs" aria-hidden>✦</span>
-            <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[1.2px] text-[#8A4B1E] sm:text-[12.5px] sm:tracking-[1.6px]">Feito à mão em pequenos lotes</span>
-          </p>
-
+        <div className="mx-auto flex max-w-[1180px] flex-col items-center px-5 pb-12 pt-20 text-center sm:px-10 sm:pb-20 sm:pt-28 lg:pb-24">
           <div className="relative mx-auto w-full max-w-[920px]">
             <div className="pointer-events-none absolute inset-x-[-4%] inset-y-[-14%] z-[1] sm:inset-x-[-8%] sm:bottom-[-18%]" aria-hidden>
               {HERO_COOKIES.map((cookie, index) => (
