@@ -44,9 +44,11 @@ export default function Home() {
 
   return (
     <>
-      {/* Destaque ---------------------------------------------------------- */}
-      <section className="relative overflow-hidden">
-        <div className="container-page grid items-center gap-10 py-10 sm:py-16 lg:grid-cols-[1.1fr_0.9fr] lg:py-20">
+      {/* Destaque ----------------------------------------------------------
+          Texto à esquerda; à direita a foto de capa (ou o primeiro destaque)
+          em formato de arco (sol nascendo) com halo, sem cartão de produto. */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-butter-100/80 via-cream-50 to-cream-50">
+        <div className="container-page grid items-center gap-10 py-10 sm:py-14 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:py-20">
           <div className="animate-slide-up space-y-6">
             <p className="eyebrow">{storeName || " "}</p>
             <h1 className="text-balance font-display text-[2.6rem] font-semibold leading-[1.02] text-cocoa-900 sm:text-6xl lg:text-7xl">
@@ -76,12 +78,15 @@ export default function Home() {
             )}
           </div>
 
-          <div className="relative mx-auto w-full max-w-md lg:max-w-none">
-            <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-butter-100" aria-hidden />
-            <div className="aspect-[4/5] overflow-hidden rounded-[2rem] shadow-[var(--shadow-lift)]">
+          <div className="relative mx-auto w-full max-w-[17rem] sm:max-w-sm lg:max-w-md" data-testid="hero-visual">
+            {/* Halo de sol e contorno pontilhado acompanhando o arco. O topo usa
+                raio em % (meia largura): "rounded-full" zeraria os cantos de baixo. */}
+            <div className="absolute -inset-[16%] rounded-full bg-[radial-gradient(circle,var(--color-butter-200)_0%,transparent_66%)]" aria-hidden />
+            <div className="absolute -inset-3 [border-top-left-radius:50%_41.667%] [border-top-right-radius:50%_41.667%] rounded-b-[2.25rem] border-2 border-dashed border-butter-300/80 sm:-inset-4" aria-hidden />
+            <div className="relative aspect-[5/6] overflow-hidden [border-top-left-radius:50%_41.667%] [border-top-right-radius:50%_41.667%] rounded-b-[2rem] bg-butter-200">
               {heroImageUrl ? (
                 <img src={heroImageUrl} alt={storeName || "Foto de capa"} fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
-              ) : config.isLoading ? (
+              ) : config.isLoading || catalog.isLoading ? (
                 <div className="skeleton h-full w-full" />
               ) : heroProduct ? (
                 <ProductImage product={heroProduct} priority />
@@ -89,18 +94,6 @@ export default function Home() {
                 <CookieIllustration seed="hero" name="cookie" className="h-full w-full" />
               )}
             </div>
-            {heroProduct && (
-              <Link
-                to={`/produto/${heroProduct.slug}`}
-                className="absolute -bottom-5 left-5 right-5 flex items-center justify-between gap-3 rounded-2xl bg-white/95 p-4 shadow-[var(--shadow-soft)] backdrop-blur sm:left-auto sm:w-72"
-              >
-                <span>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-caramel-600">Destaque</span>
-                  <span className="font-display text-lg leading-tight">{heroProduct.name}</span>
-                </span>
-                <span className="whitespace-nowrap font-semibold tabular-nums">{formatBRL(heroProduct.price_cents)}</span>
-              </Link>
-            )}
           </div>
         </div>
       </section>
