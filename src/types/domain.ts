@@ -58,7 +58,7 @@ export interface StoreConfig {
   today: string;
   paymentMethods: PaymentMethod[];
   minOrderCents: number;
-  /** Foto de capa da página inicial (Storage). Vazia: primeiro produto em destaque. */
+  /** Coluna mantida no banco; a primeira dobra atual não usa foto de capa. */
   heroImagePath: string | null;
 }
 
@@ -70,7 +70,6 @@ export interface CreateOrderResponse {
     totalCents: number;
     replayed: boolean;
   };
-  emailSent: boolean;
 }
 
 export interface PublicOrder {
@@ -92,6 +91,5 @@ export interface PublicOrder {
   timeline: { status: OrderStatus; at: string }[];
   pix: { key: string; holder: string | null } | null;
   pickupAddress: string | null;
-  emailSent: boolean;
   store: { name: string; whatsappPhone: string | null };
 }

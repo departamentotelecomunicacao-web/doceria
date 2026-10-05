@@ -10,7 +10,7 @@ import { DeliveryTab, PaymentsTab, StoreTab, TeamTab } from "./settings/Tabs";
 const TABS = [
   { key: "loja", label: "Loja" },
   { key: "entrega", label: "Entrega e agenda" },
-  { key: "pagamento", label: "Pagamento e avisos" },
+  { key: "pagamento", label: "Pagamento" },
   { key: "equipe", label: "Equipe" },
 ] as const;
 

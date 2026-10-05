@@ -22,7 +22,6 @@ const status = needsStatus ? localStatus() : {};
 export const SUPABASE_URL = process.env.SUPABASE_URL ?? status.API_URL;
 export const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? status.PUBLISHABLE_KEY;
 export const SECRET_KEY = process.env.SUPABASE_SECRET_KEY ?? status.SECRET_KEY;
-export const EMAIL_STUB_URL = process.env.EMAIL_STUB_URL ?? "http://127.0.0.1:54401";
 
 export interface HttpResult<T = unknown> {
   status: number;
@@ -138,12 +137,11 @@ export async function orderPayload(input: {
   address?: Record<string, string>;
   key?: string;
   phone?: string;
-  email?: string | null;
 }) {
   const type = input.type ?? "PICKUP";
   return {
     idempotencyKey: input.key ?? newKey(),
-    customer: { name: "Cliente de Teste", phone: input.phone ?? uniquePhone(), email: input.email ?? null },
+    customer: { name: "Cliente de Teste", phone: input.phone ?? uniquePhone() },
     fulfillment: {
       type,
       date: await firstDate(),
@@ -156,28 +154,3 @@ export async function orderPayload(input: {
   };
 }
 
-// Stub do EmailJS ---------------------------------------------------------------
-export interface CapturedEmail {
-  to_email: string;
-  to_name: string;
-  subject: string;
-  content_html: string;
-  reply_to: string;
-}
-
-export async function sentEmails(): Promise<CapturedEmail[]> {
-  const response = await fetch(`${EMAIL_STUB_URL}/__emails`);
-  return ((await response.json()) as { emails: CapturedEmail[] }).emails;
-}
-
-export async function emailsTo(address: string): Promise<CapturedEmail[]> {
-  return (await sentEmails()).filter((email) => email.to_email === address);
-}
-
-export async function failEmails(): Promise<void> {
-  await fetch(`${EMAIL_STUB_URL}/__fail`, { method: "POST" });
-}
-
-export async function resetEmails(): Promise<void> {
-  await fetch(`${EMAIL_STUB_URL}/__reset`, { method: "POST" });
-}

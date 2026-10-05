@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E contra o stack local: Supabase (supabase start + functions serve com o
-// stub de e-mail configurado) e o build estático servido como no GitHub Pages.
+// E2E contra o stack local: Supabase (supabase start + functions serve) e o
+// build estático servido como no GitHub Pages.
 // Os fusos dos navegadores são diferentes de America/Sao_Paulo de propósito:
 // a agenda da loja não pode depender do relógio do cliente.
 const CI = Boolean(process.env.CI);
@@ -31,11 +31,6 @@ export default defineConfig({
       env: { VITE_SITE_URL: "http://127.0.0.1:4173", VITE_BASE_PATH: "/" },
       reuseExistingServer: !CI,
       timeout: 180_000,
-    },
-    {
-      command: "node tests/stubs/email-stub.mjs",
-      url: "http://127.0.0.1:54401/__emails",
-      reuseExistingServer: true,
     },
   ],
 });

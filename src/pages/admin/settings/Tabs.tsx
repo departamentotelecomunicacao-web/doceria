@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImagePlus, KeyRound, Trash2, UserPlus } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { KeyRound, UserPlus } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { ROLE_LABEL, useAdminAuth } from "@/admin/auth";
-import { listTeam, removeHeroPhoto, teamAction, uploadHeroPhoto, type StoreSettingsRow, type TeamMember } from "@/api/admin";
-import { CookieIllustration } from "@/components/store/CookieIllustration";
+import { listTeam, teamAction, type StoreSettingsRow, type TeamMember } from "@/api/admin";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/components/ui/cn";
@@ -13,12 +12,10 @@ import { ErrorState, LoadingBlock, Notice } from "@/components/ui/States";
 import { useToast } from "@/components/ui/Toast";
 import { WEEKDAY_NAMES } from "@/lib/datetime";
 import { friendlyMessage } from "@/lib/errors";
-import { compressImage, validateImageFile } from "@/lib/images";
 import { PAYMENT_METHOD_LABEL, PERIOD_LABEL } from "@/lib/labels";
 import { centsToInput, parseBRLToCents } from "@/lib/money";
-import { productImageUrl } from "@/lib/rest";
 import type { AppRole, DayPeriod, PaymentMethod } from "@/types/domain";
-import { formatBrazilPhone, isEmail, normalizeBrazilPhone } from "@shared/validation.ts";
+import { formatBrazilPhone, normalizeBrazilPhone } from "@shared/validation.ts";
 import { useSettingsForm } from "./useSettingsForm";
 
 function Card({ title, description, children, footer }: { title: string; description?: ReactNode; children: ReactNode; footer?: ReactNode }) {
@@ -57,7 +54,7 @@ function toggleIn<T>(list: T[], value: T): T[] {
 // -----------------------------------------------------------------------------
 export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
   const form = useSettingsForm(settings, [
-    "store_name", "tagline", "whatsapp_phone", "notify_email", "instagram_url", "institutional_url",
+    "store_name", "tagline", "whatsapp_phone", "instagram_url", "institutional_url",
     "accepting_orders", "pause_message",
   ] as const);
   const [phoneInput, setPhoneInput] = useState(formatBrazilPhone(settings.whatsapp_phone));
@@ -67,13 +64,10 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
   const submit = () => {
     const phone = phoneInput.trim() ? normalizeBrazilPhone(phoneInput) : null;
     if (phoneInput.trim() && !phone) return setError("WhatsApp inválido. Use DDD + número.");
-    const email = v.notify_email?.trim() || null;
-    if (email && !isEmail(email)) return setError("E-mail inválido.");
     setError(null);
     form.save({
       ...v,
       whatsapp_phone: phone,
-      notify_email: email,
       instagram_url: v.instagram_url.trim(),
       institutional_url: v.institutional_url.trim(),
     });
@@ -90,7 +84,7 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
         )}
       </Card>
 
-      <Card title="Dados da loja" description="Aparecem na loja, nos e-mails e nas mensagens de WhatsApp."
+      <Card title="Dados da loja" description="Aparecem na loja e nas mensagens de WhatsApp."
         footer={<Button onClick={submit} loading={form.saving} data-testid="save-store">Salvar</Button>}>
         {error && <Notice tone="danger">{error}</Notice>}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -98,11 +92,8 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
           <Field label="Frase de destaque" optional hint="Título da página inicial.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={v.tagline} maxLength={160} onChange={(e) => form.set("tagline", e.target.value)} />}
           </Field>
-          <Field label="WhatsApp da loja" hint="Recebe as mensagens dos clientes.">
+          <Field label="WhatsApp da loja" hint="Recebe os pedidos: o cliente envia o resumo para este número.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="tel" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="(28) 99999-9999" />}
-          </Field>
-          <Field label="E-mail que recebe os pedidos" optional hint="Chega um aviso a cada pedido novo.">
-            {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="email" value={v.notify_email ?? ""} onChange={(e) => form.set("notify_email", e.target.value)} />}
           </Field>
           <Field label="Instagram" optional>
             {({ id }) => <Input id={id} type="url" value={v.instagram_url} onChange={(e) => form.set("instagram_url", e.target.value)} placeholder="https://instagram.com/suamarca" />}
@@ -113,69 +104,7 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
         </div>
       </Card>
 
-      <HeroPhotoCard path={settings.hero_image_path} />
     </div>
-  );
-}
-
-/** Foto de capa da página inicial: salva na hora, sem depender do botão "Salvar". */
-function HeroPhotoCard({ path }: { path: string | null }) {
-  const toast = useToast();
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const url = productImageUrl(path);
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
-    void queryClient.invalidateQueries({ queryKey: ["store-config"] });
-  };
-
-  const onFile = async (file: File | undefined) => {
-    if (!file) return;
-    const invalid = validateImageFile(file);
-    if (invalid) {
-      toast.error("Foto não aceita", invalid);
-      return;
-    }
-    setUploading(true);
-    try {
-      const compressed = await compressImage(file, 1600, 0.84);
-      await uploadHeroPhoto(path, { blob: compressed.blob, extension: compressed.extension, contentType: compressed.contentType });
-      toast.success("Foto de capa atualizada");
-    } catch (error) {
-      toast.error("Falha no envio", friendlyMessage(error));
-    } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
-      refresh();
-    }
-  };
-
-  const remove = useMutation({
-    mutationFn: () => removeHeroPhoto(path),
-    onSuccess: () => { toast.success("Foto de capa removida"); refresh(); },
-    onError: (error) => toast.error("Não foi possível remover", friendlyMessage(error)),
-  });
-
-  return (
-    <Card title="Foto de capa" description="A foto grande do topo da página inicial. Prefira foto vertical (em pé), com o cookie ou a marca no centro.">
-      <div className="aspect-[4/5] w-full max-w-56 overflow-hidden rounded-2xl bg-cream-100">
-        {url ? <img src={url} alt="Foto de capa atual" className="h-full w-full object-cover" /> : <CookieIllustration seed="hero" name="cookie" className="h-full w-full" />}
-      </div>
-      {!path && <Notice tone="info">Sem foto de capa, a página inicial mostra o primeiro produto marcado como destaque.</Notice>}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" loading={uploading} icon={<ImagePlus className="size-4" />} onClick={() => inputRef.current?.click()} data-testid="upload-hero">
-          {path ? "Trocar foto de capa" : "Enviar foto de capa"}
-        </Button>
-        {path && (
-          <Button size="sm" variant="ghost" className="text-berry-700" loading={remove.isPending} icon={<Trash2 className="size-4" />}
-            onClick={() => window.confirm("Remover a foto de capa?") && remove.mutate()}>
-            Remover
-          </Button>
-        )}
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/heic" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
-      </div>
-    </Card>
   );
 }
 
@@ -258,7 +187,7 @@ export function DeliveryTab({ settings }: { settings: StoreSettingsRow }) {
 
 // -----------------------------------------------------------------------------
 export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
-  const form = useSettingsForm(settings, ["payment_methods", "pix_key", "pix_holder", "email_customer_on_status"] as const);
+  const form = useSettingsForm(settings, ["payment_methods", "pix_key", "pix_holder"] as const);
   const [error, setError] = useState<string | null>(null);
   const v = form.values;
 
@@ -281,7 +210,7 @@ export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
           ))}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Chave PIX" hint="Aparece para o cliente depois do pedido e no e-mail.">
+          <Field label="Chave PIX" hint="Aparece para o cliente depois do pedido e na mensagem de WhatsApp.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={v.pix_key} maxLength={120} onChange={(e) => form.set("pix_key", e.target.value)} />}
           </Field>
           <Field label="Nome do favorecido" optional>
@@ -290,14 +219,6 @@ export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
         </div>
       </Card>
 
-      <Card title="Avisos por e-mail ao cliente" description="A confirmação de recebimento sempre é enviada quando o cliente informa e-mail.">
-        <Checkbox
-          checked={v.email_customer_on_status}
-          onChange={(value) => form.save({ email_customer_on_status: value })}
-          label="Avisar também quando o pedido for confirmado, sair para entrega, ficar pronto para retirada ou for cancelado"
-          description="O plano grátis do EmailJS permite 200 e-mails por mês. Se estiver perto do limite, desligue e use o WhatsApp."
-        />
-      </Card>
     </div>
   );
 }

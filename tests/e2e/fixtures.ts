@@ -1,8 +1,8 @@
 import { test as base, expect, type Page } from "@playwright/test";
-import { callFunction, createTestProduct, emailsTo, getStock, orderPayload, rest, service, signIn, type TestProduct } from "../helpers/local";
+import { callFunction, createTestProduct, getStock, orderPayload, rest, service, signIn, type TestProduct } from "../helpers/local";
 
 export { expect };
-export { callFunction, createTestProduct, emailsTo, getStock, orderPayload, rest, service, signIn };
+export { callFunction, createTestProduct, getStock, orderPayload, rest, service, signIn };
 export type { TestProduct };
 
 export const test = base.extend<{ page: Page }>({
@@ -18,10 +18,9 @@ export async function addToCartFromProductPage(page: Page, product: TestProduct,
   await page.getByRole("button", { name: "Adicionar ao carrinho" }).click();
 }
 
-export async function fillCustomer(page: Page, phone = "(28) 99911-2233", email?: string) {
+export async function fillCustomer(page: Page, phone = "(28) 99911-2233") {
   await page.getByLabel("Nome", { exact: true }).fill("Cliente E2E");
   await page.getByLabel("WhatsApp", { exact: true }).fill(phone);
-  if (email) await page.getByRole("textbox", { name: /E-mail/ }).fill(email);
 }
 
 export async function adminLogin(page: Page, email = "dono@doceria.local") {

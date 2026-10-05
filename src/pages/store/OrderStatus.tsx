@@ -1,4 +1,4 @@
-import { Bike, CalendarDays, Check, CheckCircle2, Copy, Mail, MapPin, MessageCircle, RefreshCw, Store, XCircle } from "lucide-react";
+import { Bike, CalendarDays, Check, CheckCircle2, Copy, MapPin, MessageCircle, RefreshCw, Store, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { Badge } from "@/components/ui/Badge";
@@ -126,16 +126,16 @@ export default function OrderStatusPage() {
           <CheckCircle2 className="size-10 text-caramel-300" aria-hidden />
           <h1 className="mt-3 font-display text-3xl sm:text-4xl">Pedido recebido, {order.customerFirstName}!</h1>
           <p className="mt-2 text-cream-200">
-            {order.emailSent
-              ? <>Enviamos o resumo do pedido <strong>#{order.code}</strong> para o seu e-mail. </>
-              : <>Guarde este link para acompanhar o pedido <strong>#{order.code}</strong>. </>}
-            Mande também no nosso WhatsApp para agilizar a confirmação.
+            {whatsapp
+              ? <>Último passo: envie o pedido <strong>#{order.code}</strong> no nosso WhatsApp. A mensagem já vai pronta, e a confirmação chega por lá.</>
+              : <>Guarde este link para acompanhar o pedido <strong>#{order.code}</strong>. Vamos confirmar pelo WhatsApp.</>}
           </p>
           {whatsapp && (
-            <a href={whatsapp} target="_blank" rel="noopener" className={buttonClasses("success", "lg", "mt-5")} data-testid="send-whatsapp">
-              <MessageCircle className="size-5" aria-hidden /> Enviar pelo WhatsApp
+            <a href={whatsapp} target="_blank" rel="noopener" className={buttonClasses("success", "lg", "mt-5 w-full sm:w-auto")} data-testid="send-whatsapp">
+              <MessageCircle className="size-5" aria-hidden /> Enviar pedido pelo WhatsApp
             </a>
           )}
+          <p className="mt-3 text-sm text-cream-200/80">Guarde este link para acompanhar o andamento.</p>
         </div>
       )}
 
@@ -213,9 +213,6 @@ export default function OrderStatusPage() {
           <button type="button" onClick={() => query.refetch()} className="-ml-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-cocoa-700 hover:bg-cream-100 hover:text-cocoa-900">
             <RefreshCw className={cn("size-4", query.isFetching && "animate-spin")} aria-hidden /> Atualizar status
           </button>
-          {order.emailSent && !justCreated && (
-            <span className="inline-flex items-center gap-1.5 text-sm text-cocoa-600"><Mail className="size-4" aria-hidden /> Resumo enviado por e-mail</span>
-          )}
           {!justCreated && whatsapp && (
             <a href={whatsapp} target="_blank" rel="noopener" className={buttonClasses("secondary", "sm")}>
               <MessageCircle className="size-4" aria-hidden /> Falar sobre este pedido

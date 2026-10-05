@@ -151,18 +151,16 @@ export interface AdminOrderDetail {
   order: AdminOrder;
   items: { id: string; product_name: string; quantity: number; unit_price_cents: number; line_total_cents: number }[];
   events: { id: number; kind: string; from_status: OrderStatus | null; to_status: OrderStatus | null; message: string; actorName: string | null; created_at: string }[];
-  notifications: { id: number; kind: string; recipient: string; status: "SENT" | "FAILED" | "SKIPPED"; error: string | null; created_at: string }[];
 }
 
 export async function getOrder(orderId: string): Promise<AdminOrderDetail | null> {
-  const [order, items, events, notifications, profiles] = await Promise.all([
+  const [order, items, events, profiles] = await Promise.all([
     client().from("orders").select("*").eq("id", orderId).maybeSingle(),
     client().from("order_items").select("id,product_name,quantity,unit_price_cents,line_total_cents").eq("order_id", orderId).order("product_name"),
     client().from("order_events").select("id,kind,from_status,to_status,message,actor_id,created_at").eq("order_id", orderId).order("id"),
-    client().from("order_notifications").select("id,kind,recipient,status,error,created_at").eq("order_id", orderId).order("id"),
     client().from("profiles").select("id,full_name"),
   ]);
-  const error = order.error ?? items.error ?? events.error ?? notifications.error;
+  const error = order.error ?? items.error ?? events.error;
   if (error) throw fromPostgrest(error, order.status);
   if (!order.data) return null;
   const names = new Map((profiles.data ?? []).map((p) => [p.id as string, p.full_name as string]));
@@ -170,7 +168,6 @@ export async function getOrder(orderId: string): Promise<AdminOrderDetail | null
     order: order.data as AdminOrder,
     items: (items.data ?? []) as AdminOrderDetail["items"],
     events: (events.data ?? []).map((e) => ({ ...e, actorName: e.actor_id ? names.get(e.actor_id) ?? null : null })) as AdminOrderDetail["events"],
-    notifications: (notifications.data ?? []) as AdminOrderDetail["notifications"],
   };
 }
 
@@ -185,17 +182,6 @@ export const setDeliveryFee = (orderId: string, feeCents: number) =>
 
 export const setInternalNotes = (orderId: string, notes: string) =>
   rpc<void>("admin_set_internal_notes", { p_order_id: orderId, p_notes: notes });
-
-export interface NotifyResult {
-  kind: string | null;
-  status: "SENT" | "FAILED" | "SKIPPED";
-  reason?: string;
-}
-
-/** E-mail ao cliente sobre o status atual (ou reenvio da confirmação). */
-export async function notifyCustomer(orderId: string, kind: "STATUS" | "RECEIVED", force = false): Promise<NotifyResult> {
-  return callFunction<NotifyResult>("notify-order", { orderId, kind, force }, { accessToken: await accessToken(), timeoutMs: 20_000 });
-}
 
 // -----------------------------------------------------------------------------
 // Produtos e categorias
@@ -279,30 +265,6 @@ export async function uploadProductPhoto(
   }
   if (product.image_path) await storage.remove([product.image_path]);
   return path;
-}
-
-/** Foto de capa da página inicial (pasta capa/ do mesmo bucket das fotos). */
-export async function uploadHeroPhoto(
-  currentPath: string | null,
-  file: { blob: Blob; extension: string; contentType: string },
-): Promise<string> {
-  const storage = client().storage.from(BUCKET);
-  const path = `capa/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${file.extension}`;
-  const upload = await storage.upload(path, file.blob, { contentType: file.contentType, cacheControl: "31536000", upsert: false });
-  if (upload.error) throw new ApiError(400, "UPLOAD_FAILED", "Não foi possível enviar a foto. Verifique o arquivo e tente novamente.");
-  try {
-    await updateSettings({ hero_image_path: path });
-  } catch (error) {
-    await storage.remove([path]);
-    throw error;
-  }
-  if (currentPath) await storage.remove([currentPath]);
-  return path;
-}
-
-export async function removeHeroPhoto(currentPath: string | null): Promise<void> {
-  await updateSettings({ hero_image_path: null });
-  if (currentPath) await client().storage.from(BUCKET).remove([currentPath]);
 }
 
 export async function removeProductPhoto(product: Pick<Product, "id" | "image_path">): Promise<void> {

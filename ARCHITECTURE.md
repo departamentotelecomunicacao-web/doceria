@@ -1,6 +1,6 @@
 # Arquitetura
 
-Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). Modelo simples de propósito: frete fixo, estoque opcional, dois papéis na equipe e devolutiva por e-mail e WhatsApp.
+Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). Modelo simples de propósito: frete fixo, estoque opcional, dois papéis na equipe e comunicação com o cliente só pelo WhatsApp.
 
 ## Visão geral
 
@@ -14,14 +14,13 @@ Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). M
                                                     │ HTTPS (chave publicável)
 ┌───────────────────────────────────────────────────▼──────────────────────┐
 │ Supabase                                                                  │
-│  Postgres + RLS: produtos, pedidos, itens, histórico, e-mails, config.    │
+│  Postgres + RLS: produtos, pedidos, itens, histórico, config.             │
 │  Funções SQL: create_order (preço, frete, estoque), status, pago, frete   │
 │  Auth: contas da equipe (Dono, Atendente) · Storage: fotos · Realtime     │
 │  Edge Functions:                                                          │
-│    create-order  valida, grava pelo create_order, envia e-mails ──┐       │
-│    notify-order  e-mail do status atual (equipe logada) ──────────┼─▶ EmailJS
-│    admin-users   gestão da equipe (só o dono)                     │       │
-└───────────────────────────────────────────────────────────────────┴───────┘
+│    create-order  valida e grava pelo create_order                         │
+│    admin-users   gestão da equipe (só o dono)                             │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Princípios
@@ -29,7 +28,7 @@ Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). M
 1. **O banco é a fonte da verdade.** Loja, painel e cardápio do Wix leem o mesmo Supabase. Mudar preço ou taxa no painel vale na hora, sem deploy.
 2. **O navegador não define valores.** O checkout envia IDs, quantidades, contato, endereço, dia, período e pagamento. Preço, frete fixo, total e estoque são calculados em `public.create_order`. Campos extras são recusados.
 3. **Pedido atômico e idempotente.** `create_order` trava os produtos em ordem estável, confere disponibilidade, grava pedido e itens (com nome e preço da época) e baixa o estoque na mesma transação. A mesma chave de idempotência devolve o mesmo pedido.
-4. **O e-mail nunca derruba o pedido.** Primeiro o pedido é gravado; depois os e-mails são enviados e registrados em `order_notifications` (enviado, falhou, não enviado). O painel mostra e permite reenviar.
+4. **Comunicação pelo WhatsApp.** O pedido é gravado no banco e aparece no painel na hora. O cliente envia o resumo pronto no WhatsApp da loja e a equipe responde e avisa cada status pelo WhatsApp, com a mensagem montada pelo painel. Não há envio de e-mail.
 5. **Operação simples.** A equipe só faz login e toca em botões; o que é regra fica no banco.
 
 ## Banco
@@ -41,7 +40,7 @@ Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). M
 | `20260930120100_schema.sql` | Tabelas, tipos e restrições |
 | `20260930120200_functions.sql` | Regras: agenda, pedido, página pública, ações do painel, limite por IP |
 | `20260930120300_security.sql` | RLS, permissões, fotos e tempo real |
-| `20261003120000_capa_e_ordem.sql` | Foto de capa da página inicial; ordem do cardápio a partir de 1 |
+| `20261003120000_capa_e_ordem.sql` | Ordem do cardápio a partir de 1 (e a coluna `hero_image_path`, hoje sem uso) |
 
 | Tabela | Uso |
 |---|---|
@@ -50,7 +49,7 @@ Loja online de uma marca artesanal de cookies em Cachoeiro de Itapemirim (ES). M
 | `categories`, `products` | Cardápio. `products.stock` nulo = sem controle de quantidade |
 | `orders`, `order_items` | Pedido (contato, endereço, dia e período, valores, pago) e itens com nome e preço da época |
 | `order_events` | Histórico: criação, status, pagamento, frete |
-| `order_notifications` | E-mails enviados por pedido |
+| `order_notifications` | Histórico dos e-mails da versão anterior (sem uso) |
 | `rate_limits` | Limite de pedidos por hash de IP |
 
 ## Fluxo do pedido
@@ -63,9 +62,8 @@ Cliente                         create-order (Edge)                 Banco
    │                              │                                  │ total = itens + taxa fixa
    │                              │                                  │ compara com o total exibido
    │                              │◀─────────────────── pedido ──────┘
-   │                              │ e-mail ao cliente e à loja (EmailJS)
    │◀── link do pedido ───────────┘
-   │ "Enviar pelo WhatsApp" (mensagem pronta para a loja)
+   │ "Enviar pedido pelo WhatsApp" (mensagem pronta para a loja)
 ```
 
 ## Status
@@ -76,7 +74,7 @@ RECEIVED ─▶ CONFIRMED ─▶ PREPARING ─▶ OUT_FOR_DELIVERY (entrega)  �
 qualquer um antes de DELIVERED ─▶ CANCELED (devolve o estoque)
 ```
 
-Pagamento é independente: "pago" ou "a receber", marcado pela equipe. E-mail ao cliente em Confirmado, Saiu para entrega, Pronto para retirada e Cancelado (pode ser desligado).
+Pagamento é independente: "pago" ou "a receber", marcado pela equipe. A cada mudança de status, o painel destaca "Avisar no WhatsApp" com a mensagem pronta.
 
 ## Frontend
 
@@ -90,6 +88,6 @@ Pagamento é independente: "pago" ou "a receber", marcado pela equipe. E-mail ao
 |---|---|
 | Supabase em vez de JSON em arquivo (JSONBin) | Pedidos simultâneos não se sobrescrevem e nenhuma chave de escrita fica no código público |
 | Frete fixo editável | Atendimento em uma cidade; o valor pode ser ajustado em cada pedido |
-| E-mail pelo servidor via EmailJS | Reaproveita a conta existente e impede uso do site para spam |
+| Sem e-mail, só WhatsApp | É o canal que a loja e os clientes usam; elimina cota, chaves e configuração de e-mail |
 | WhatsApp por link (`wa.me`) | Sem custo e sem aprovação da Meta; a mensagem já vai escrita |
 | `/embed` abre a loja em nova aba | Checkout fora do iframe do Wix (sem problemas de cookies e sandbox) |

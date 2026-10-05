@@ -51,8 +51,7 @@ export default function Privacy() {
 
       <Block title="Quais dados usamos e por quê">
         <ul className="list-disc space-y-2 pl-5">
-          <li><strong>Nome e WhatsApp</strong>: identificar o pedido e falar com você sobre ele.</li>
-          <li><strong>E-mail</strong> (opcional): enviar a confirmação e as atualizações do pedido.</li>
+          <li><strong>Nome e WhatsApp</strong>: identificar o pedido, confirmar e avisar você sobre o andamento.</li>
           <li><strong>Endereço</strong> (só para entrega): levar o pedido até você.</li>
           <li><strong>Pedido</strong>: itens, valores, data e pagamento, para produzir, entregar e cumprir obrigações legais.</li>
           <li>
@@ -60,14 +59,13 @@ export default function Privacy() {
             abusivas de pedido. Não guardamos o IP em si.
           </li>
         </ul>
-        <p>Não pedimos CPF, data de nascimento nem senha. Não há cadastro de cliente.</p>
+        <p>Não pedimos e-mail, CPF, data de nascimento nem senha. Não há cadastro de cliente.</p>
       </Block>
 
       <Block title="Com quem compartilhamos">
         <ul className="list-disc space-y-2 pl-5">
           <li><strong>Supabase</strong>: banco de dados onde os pedidos ficam guardados.</li>
-          <li><strong>EmailJS</strong>: envio dos e-mails de confirmação do pedido.</li>
-          <li><strong>WhatsApp</strong>: quando você ou a loja decidem conversar por lá.</li>
+          <li><strong>WhatsApp</strong>: canal da confirmação e dos avisos do pedido, quando você envia o pedido ou a loja responde.</li>
         </ul>
         <p>Não vendemos nem cedemos seus dados para publicidade.</p>
       </Block>

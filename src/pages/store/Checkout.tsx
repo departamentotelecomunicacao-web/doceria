@@ -35,7 +35,6 @@ interface AddressForm {
 interface CheckoutForm {
   name: string;
   phone: string;
-  email: string;
   fulfillment: FulfillmentType | null;
   address: AddressForm;
   date: string;
@@ -48,7 +47,6 @@ interface CheckoutForm {
 const EMPTY_FORM: CheckoutForm = {
   name: "",
   phone: "",
-  email: "",
   fulfillment: null,
   address: { street: "", number: "", district: "", complement: "", reference: "" },
   date: "",
@@ -65,7 +63,7 @@ const PAYMENT_ICONS: Record<PaymentMethod, ReactNode> = {
 };
 
 const PAYMENT_HINT: Record<PaymentMethod, string> = {
-  PIX: "A chave PIX aparece depois de confirmar e também vai no seu e-mail.",
+  PIX: "A chave PIX aparece depois de confirmar o pedido.",
   CASH: "Pague na entrega ou na retirada.",
   CARD: "Débito ou crédito na maquininha, na entrega ou na retirada.",
 };
@@ -192,7 +190,7 @@ export default function Checkout() {
     }
 
     const draftPayload = {
-      customer: { name: form.name, phone: form.phone, email: form.email || null },
+      customer: { name: form.name, phone: form.phone },
       fulfillment: { type: fulfillment, date, period, ...(isDelivery ? { address: form.address } : {}) },
       items: reconciled.items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
       paymentMethod,
@@ -287,16 +285,10 @@ export default function Checkout() {
                     onChange={(ev) => update("name", ev.target.value)} maxLength={120} required />
                 )}
               </Field>
-              <Field label="WhatsApp" error={e("customer.phone")} hint="Para falarmos sobre o pedido.">
+              <Field label="WhatsApp" error={e("customer.phone")} hint="A confirmação e os avisos do pedido chegam por aqui.">
                 {({ id, describedBy }) => (
                   <Input id={id} aria-describedby={describedBy} type="tel" inputMode="tel" autoComplete="tel-national" placeholder="(28) 99999-9999"
                     value={form.phone} error={e("customer.phone")} onChange={(ev) => update("phone", ev.target.value)} maxLength={20} required />
-                )}
-              </Field>
-              <Field label="E-mail" optional error={e("customer.email")} hint="Enviamos a confirmação do pedido.">
-                {({ id, describedBy }) => (
-                  <Input id={id} aria-describedby={describedBy} type="email" autoComplete="email" value={form.email} error={e("customer.email")}
-                    onChange={(ev) => update("email", ev.target.value)} maxLength={254} />
                 )}
               </Field>
             </div>

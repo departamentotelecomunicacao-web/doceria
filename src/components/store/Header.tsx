@@ -20,20 +20,20 @@ export function Header() {
           {config.data.pauseMessage || "No momento não estamos recebendo pedidos. Volte em breve!"}
         </div>
       )}
-      <div className="container-page flex h-16 items-center justify-between gap-4">
-        <Link to="/" className="flex items-center gap-2.5" aria-label={storeName ? `${storeName}, página inicial` : "Página inicial"}>
-          <span className="grid size-9 place-items-center rounded-xl bg-cocoa-900 text-caramel-400" aria-hidden>
+      <div className="container-page flex h-16 items-center justify-between gap-2 sm:gap-4">
+        <Link to="/" className="flex min-w-0 items-center gap-2.5" aria-label={storeName ? `${storeName}, página inicial` : "Página inicial"}>
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-cocoa-900 text-caramel-400" aria-hidden>
             <svg viewBox="0 0 24 24" className="size-5" fill="currentColor">
               <path d="M12 3c5 0 9 3.7 9 8.6 0 5-3.8 9.4-9.2 9.4C6.7 21 3 17.3 3 12.3 3 7.3 6.9 3 12 3Z" />
               <g fill="#2A1B12"><circle cx="9" cy="9" r="1.3" /><circle cx="14.5" cy="8.2" r="1" /><circle cx="15.8" cy="13" r="1.4" /><circle cx="10.4" cy="14.6" r="1.1" /></g>
             </svg>
           </span>
-          <span className="font-display text-xl font-semibold tracking-tight text-cocoa-900">
+          <span className="truncate font-display text-lg font-semibold tracking-tight text-cocoa-900 min-[380px]:text-xl">
             {storeName || <span className="skeleton inline-block h-5 w-24 rounded-md align-middle" />}
           </span>
         </Link>
 
-        <nav className="flex items-center gap-1" aria-label="Principal">
+        <nav className="flex shrink-0 items-center gap-1" aria-label="Principal">
           <NavLink to="/produtos" className={navLink}>
             Cardápio
           </NavLink>

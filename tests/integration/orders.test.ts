@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { callFunction, createTestProduct, getStock, newKey, orderPayload, rest, service, signIn } from "../helpers/local";
 
-type OrderResponse = { order: { orderId: string; code: string; publicToken: string; totalCents: number; replayed: boolean }; emailSent: boolean };
+type OrderResponse = { order: { orderId: string; code: string; publicToken: string; totalCents: number; replayed: boolean } };
 type ErrorResponse = { error: { code: string; message: string; data: Record<string, unknown> | null } };
 
 describe("criação de pedido (Edge Function + banco)", () => {
