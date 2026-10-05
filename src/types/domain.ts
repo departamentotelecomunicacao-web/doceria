@@ -70,7 +70,6 @@ export interface CreateOrderResponse {
     totalCents: number;
     replayed: boolean;
   };
-  emailSent: boolean;
 }
 
 export interface PublicOrder {
@@ -92,6 +91,5 @@ export interface PublicOrder {
   timeline: { status: OrderStatus; at: string }[];
   pix: { key: string; holder: string | null } | null;
   pickupAddress: string | null;
-  emailSent: boolean;
   store: { name: string; whatsappPhone: string | null };
 }

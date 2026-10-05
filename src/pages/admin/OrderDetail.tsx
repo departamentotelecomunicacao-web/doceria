@@ -1,16 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bike, Copy, Mail, MapPin, MessageCircle, Phone, RotateCcw, Store, XCircle } from "lucide-react";
+import { ArrowLeft, Bike, Copy, MapPin, MessageCircle, Phone, Store, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import {
-  getOrder,
-  notifyCustomer,
-  setDeliveryFee,
-  setInternalNotes,
-  setOrderPaid,
-  setOrderStatus,
-  type NotifyResult,
-} from "@/api/admin";
+import { getOrder, setDeliveryFee, setInternalNotes, setOrderPaid, setOrderStatus } from "@/api/admin";
 import { OrderStatusBadge, PaidBadge } from "@/components/admin/StatusBadges";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { Field, Input, Textarea } from "@/components/ui/Field";
@@ -32,15 +24,6 @@ const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   OUT_FOR_DELIVERY: "Saiu para entrega",
   READY_FOR_PICKUP: "Pronto para retirada",
   DELIVERED: "Concluir pedido",
-};
-
-const EMAIL_KIND_LABEL: Record<string, string> = {
-  ORDER_RECEIVED: "Confirmação de recebimento",
-  STORE_NEW_ORDER: "Aviso de pedido novo (loja)",
-  ORDER_CONFIRMED: "Pedido confirmado",
-  ORDER_OUT_FOR_DELIVERY: "Saiu para entrega",
-  ORDER_READY_FOR_PICKUP: "Pronto para retirada",
-  ORDER_CANCELED: "Pedido cancelado",
 };
 
 const EVENT_LABEL: Record<string, string> = { CREATED: "Pedido feito", STATUS: "Status", PAYMENT: "Pagamento", FEE: "Taxa de entrega" };
@@ -84,24 +67,15 @@ export default function OrderDetail() {
     toast.error("Não foi possível salvar", friendlyMessage(error));
     refresh();
   };
-  const reportEmail = (result: NotifyResult) => {
-    if (result.status === "SENT") toast.success("E-mail enviado ao cliente");
-    else if (result.status === "FAILED") toast.error("O e-mail não foi enviado", "Avise o cliente pelo WhatsApp ou tente reenviar.");
-  };
+  // Depois de mudar o status, o painel destaca o aviso ao cliente pelo WhatsApp
+  // (a comunicação com o cliente é só por WhatsApp).
+  const [notifyStatus, setNotifyStatus] = useState<OrderStatus | null>(null);
 
   const statusMutation = useMutation({
-    mutationFn: async ({ status, message }: { status: OrderStatus; message?: string }) => {
-      await setOrderStatus(orderId, status, message);
-      // Devolutiva automática por e-mail (o servidor decide se cabe e evita repetição).
-      try {
-        return await notifyCustomer(orderId, "STATUS");
-      } catch {
-        return { kind: null, status: "FAILED", reason: "network" } as NotifyResult;
-      }
-    },
-    onSuccess: (email, { status }) => {
+    mutationFn: ({ status, message }: { status: OrderStatus; message?: string }) => setOrderStatus(orderId, status, message),
+    onSuccess: (_, { status }) => {
       toast.success(`Pedido: ${orderStatusLabel(status, detail?.order.fulfillment_type)}`);
-      reportEmail(email);
+      setNotifyStatus(status);
       setCancelOpen(false);
       refresh();
     },
@@ -120,15 +94,6 @@ export default function OrderDetail() {
   const notesMutation = useMutation({
     mutationFn: (value: string) => setInternalNotes(orderId, value),
     onSuccess: () => { toast.success("Anotação salva"); setNotesDirty(false); refresh(); },
-    onError,
-  });
-  const resendMutation = useMutation({
-    mutationFn: () => notifyCustomer(orderId, "RECEIVED", true),
-    onSuccess: (result) => {
-      if (result.status === "SKIPPED") toast.info("E-mail não enviado", result.reason);
-      else reportEmail(result);
-      refresh();
-    },
     onError,
   });
 
@@ -224,6 +189,18 @@ export default function OrderDetail() {
         </div>
       )}
 
+      {/* Aviso ao cliente logo após mudar o status ------------------------------- */}
+      {notifyStatus && notifyStatus === order.status && waCustomer && (
+        <div className="card flex flex-col gap-3 border border-sage-700/20 bg-sage-100 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="whatsapp-prompt">
+          <p className="text-sm text-cocoa-800">
+            <strong>{orderStatusLabel(order.status, order.fulfillment_type)}.</strong> Avise o cliente: a mensagem já vai pronta.
+          </p>
+          <a href={waCustomer} target="_blank" rel="noopener" onClick={() => setNotifyStatus(null)} className={buttonClasses("success", "md")}>
+            <MessageCircle className="size-4" aria-hidden /> Avisar no WhatsApp
+          </a>
+        </div>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="space-y-5">
           {/* Cliente --------------------------------------------------------------- */}
@@ -240,9 +217,6 @@ export default function OrderDetail() {
               </a>
             </div>
             <p className="text-xs text-cocoa-500">O WhatsApp abre com a mensagem do status atual pronta para enviar.</p>
-            {order.customer_email && (
-              <p className="flex items-center gap-2 text-sm text-cocoa-700"><Mail className="size-4" aria-hidden /> {order.customer_email}</p>
-            )}
           </Card>
 
           {/* Entrega ou retirada --------------------------------------------------- */}
@@ -321,32 +295,6 @@ export default function OrderDetail() {
             )}
           </Card>
 
-          {/* E-mails ---------------------------------------------------------------- */}
-          <Card
-            title="E-mails"
-            actions={order.customer_email ? (
-              <Button size="sm" variant="secondary" loading={resendMutation.isPending} onClick={() => resendMutation.mutate()} icon={<RotateCcw className="size-4" />}>
-                Reenviar confirmação
-              </Button>
-            ) : undefined}
-          >
-            {!order.customer_email && <p className="text-sm text-cocoa-600">O cliente não informou e-mail. Use o WhatsApp.</p>}
-            {detail.notifications.length === 0 ? (
-              <p className="text-sm text-cocoa-500">Nenhum e-mail registrado.</p>
-            ) : (
-              <ul className="space-y-1.5 text-sm" data-testid="email-log">
-                {detail.notifications.map((n) => (
-                  <li key={n.id} className="flex flex-wrap items-center justify-between gap-2">
-                    <span>{EMAIL_KIND_LABEL[n.kind] ?? n.kind}</span>
-                    <span className={n.status === "SENT" ? "text-sage-700" : n.status === "FAILED" ? "text-berry-700" : "text-cocoa-500"}>
-                      {n.status === "SENT" ? "enviado" : n.status === "FAILED" ? "falhou" : "não enviado"} · {formatDateTime(n.created_at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
           {/* Histórico ------------------------------------------------------------- */}
           <Card title="Histórico" actions={<Button size="sm" variant="ghost" onClick={copyLink} icon={<Copy className="size-4" />}>Link do cliente</Button>}>
             <ol className="space-y-2 text-sm">
@@ -369,7 +317,7 @@ export default function OrderDetail() {
         open={cancelOpen}
         onClose={() => setCancelOpen(false)}
         title={`Cancelar pedido #${order.code}?`}
-        description="Os produtos com controle de estoque voltam para o estoque. O cliente recebe um e-mail avisando (se informou e-mail)."
+        description="Os produtos com controle de estoque voltam para o estoque. Depois, avise o cliente pelo WhatsApp."
         footer={
           <>
             <Button variant="secondary" onClick={() => setCancelOpen(false)}>Voltar</Button>

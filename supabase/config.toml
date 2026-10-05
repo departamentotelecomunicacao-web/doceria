@@ -418,12 +418,9 @@ enabled = true
 
 # -----------------------------------------------------------------------------
 # Edge Functions da Doceria. A verificação de JWT do gateway fica desligada
-# porque create-order é pública e notify-order/admin-users validam o token do
-# usuário no próprio código (compatível com as novas chaves de API).
+# porque create-order é pública e admin-users valida o token do usuário no
+# próprio código (compatível com as novas chaves de API).
 # -----------------------------------------------------------------------------
-[functions.notify-order]
-verify_jwt = false
-
 [functions.create-order]
 verify_jwt = false
 

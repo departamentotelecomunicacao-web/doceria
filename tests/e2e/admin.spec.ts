@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { adminLogin, callFunction, createTestProduct, emailsTo, expect, getStock, orderPayload, test } from "./fixtures";
+import { adminLogin, callFunction, createTestProduct, expect, getStock, orderPayload, test } from "./fixtures";
 
-async function createOrder(productId: string, quantity: number, priceCents: number, options: { email?: string; type?: "PICKUP" | "DELIVERY" } = {}) {
+async function createOrder(productId: string, quantity: number, priceCents: number, options: { type?: "PICKUP" | "DELIVERY" } = {}) {
   const type = options.type ?? "PICKUP";
   const fee = type === "DELIVERY" ? 500 : 0;
   const result = await callFunction<{ order: { orderId: string; code: string } }>(
     "create-order",
-    await orderPayload({ items: [{ productId, quantity }], expectedTotalCents: priceCents * quantity + fee, email: options.email ?? null, type }),
+    await orderPayload({ items: [{ productId, quantity }], expectedTotalCents: priceCents * quantity + fee, type }),
   );
   expect(result.status).toBe(201);
   return result.body.order;
@@ -27,10 +27,9 @@ test.describe("painel", () => {
     await expect(page.getByText("E-mail ou senha incorretos.")).toBeVisible();
   });
 
-  test("atendente confirma o pedido, o cliente recebe e-mail e o WhatsApp vem pronto", async ({ page }) => {
-    const email = `e2e-${randomUUID().slice(0, 8)}@example.com`;
+  test("atendente confirma o pedido e o aviso ao cliente sai pronto no WhatsApp", async ({ page }) => {
     const product = await createTestProduct({ stock: 5, priceCents: 2500 });
-    const order = await createOrder(product.id, 2, 2500, { email, type: "DELIVERY" });
+    const order = await createOrder(product.id, 2, 2500, { type: "DELIVERY" });
 
     await adminLogin(page, "atendente@doceria.local");
     await expect(page.getByTestId("summary-new")).not.toHaveText("0");
@@ -42,12 +41,11 @@ test.describe("painel", () => {
 
     await page.getByTestId("next-status").click();
     await expect(page.getByTestId("admin-order-status")).toContainText("Confirmado");
-    await expect(page.getByText("E-mail enviado ao cliente")).toBeVisible();
-    await expect(page.getByTestId("email-log")).toContainText("Pedido confirmado");
-    expect((await emailsTo(email)).map((e) => e.subject)).toEqual([
-      `Recebemos seu pedido #${order.code}`,
-      `Pedido #${order.code} confirmado`,
-    ]);
+    // Logo após mudar o status, o painel destaca o aviso pelo WhatsApp.
+    const prompt = page.getByTestId("whatsapp-prompt");
+    await expect(prompt).toContainText("Avise o cliente");
+    const promptHref = decodeURIComponent((await prompt.getByRole("link", { name: /Avisar no WhatsApp/ }).getAttribute("href"))!);
+    expect(promptHref).toContain(`Seu pedido #${order.code} está confirmado`);
 
     const wa = decodeURIComponent((await page.getByTestId("whatsapp-customer").getAttribute("href"))!);
     expect(wa).toContain(`Seu pedido #${order.code} está confirmado`);

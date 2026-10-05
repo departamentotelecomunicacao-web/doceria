@@ -14,11 +14,10 @@ O objetivo é segurança suficiente sem complicar a operação: a equipe só faz
 | Painel sem login | Rotas levam ao login; dados protegidos por RLS | `admin.spec.ts`, `01_security.test.sql` |
 | Atendente alterando preço ou configurações | RLS: só o dono escreve em produtos e configurações; atendente usa funções específicas | `security.test.ts`, `01_security.test.sql` |
 | Cadastro de contas por estranhos | Cadastro público do Auth desligado; contas criadas pelo dono | `security.test.ts` |
-| Usar o site para disparar e-mails | E-mail sai só do servidor, com conteúdo montado a partir do pedido gravado; `notify-order` exige login da equipe | `notify.test.ts` |
 | Abuso da criação de pedidos | Limite por hash de IP | `http.test.ts` |
 | Clickjacking no painel | Painel não abre dentro de iframe | `embed.spec.ts` |
-| Vazamento de segredos | Navegador só recebe a chave publicável; chaves do EmailJS e do Supabase ficam nos segredos das funções | revisão manual |
-| XSS | React escapa conteúdo; e-mails escapam HTML; CSP no build | `emails.test.ts` |
+| Vazamento de segredos | Navegador só recebe a chave publicável; a chave secreta do Supabase fica nos segredos das funções | revisão manual |
+| XSS | React escapa conteúdo; CSP no build | revisão manual |
 
 ## RLS por tabela
 
@@ -39,14 +38,13 @@ Funções: nada é executável por padrão; cada uma é liberada explicitamente.
 |---|---|
 | Chave publicável do Supabase | `VITE_SUPABASE_PUBLISHABLE_KEY` (pública por natureza, protegida por RLS) |
 | Chave secreta do Supabase | Só no ambiente das Edge Functions (injetada pelo Supabase) |
-| Chaves do EmailJS | Supabase > Edge Functions > Secrets |
 | `RATE_LIMIT_SALT` | idem |
 | Token de acesso e senha do banco (deploy) | Secrets do environment `production` no GitHub |
 
 ## LGPD
 
-- **Minimização:** nome, WhatsApp, e-mail opcional e endereço só para entrega. Sem cadastro de cliente, CPF ou senha.
-- **Transparência:** página `/privacidade` com finalidades, compartilhamentos (Supabase, EmailJS, WhatsApp) e canal de contato (WhatsApp da loja).
+- **Minimização:** nome, WhatsApp e endereço só para entrega. Sem e-mail, cadastro de cliente, CPF ou senha.
+- **Transparência:** página `/privacidade` com finalidades, compartilhamentos (Supabase, WhatsApp) e canal de contato (WhatsApp da loja).
 - **Sem rastreamento:** não há analytics nem cookies de publicidade; o navegador guarda só o carrinho e o rascunho do checkout.
 - **Logs:** as funções registram código do pedido, valores e status, nunca nome, telefone ou endereço.
 - **Pedidos de exclusão:** atender pelo WhatsApp; os pedidos ficam guardados pelo prazo fiscal.
@@ -57,5 +55,4 @@ Funções: nada é executável por padrão; cada uma é liberada explicitamente.
 - [ ] Nenhum segredo no repositório (`git grep -n "sb_secret_\|service_role\|accessToken"` sem valores reais).
 - [ ] `ALLOWED_ORIGINS` só com a origem da loja (sem ele, vale a origem de `SITE_URL`; sem os dois, qualquer origem e aviso `cors.not_configured` no log, para a loja não parar por esquecimento).
 - [ ] Auth: provedor Email **ligado** com "Allow new users to sign up" **desligado**, senha mínima de 10 caracteres, URLs com o endereço da loja.
-- [ ] EmailJS: "Use Private Key" marcado.
 - [ ] Environment `production` do GitHub com revisor obrigatório.

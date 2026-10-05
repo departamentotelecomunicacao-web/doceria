@@ -23,18 +23,18 @@
    1. vincula o projeto;
    2. mostra as migrations pendentes (`db push --dry-run`);
    3. aplica as migrations (`db push`);
-   4. publica as Edge Functions `create-order`, `notify-order` e `admin-users`.
+   4. publica as Edge Functions `create-order` e `admin-users`.
 4. **Supabase > Authentication**:
    - URL Configuration: Site URL = endereço da loja; Redirect URLs = `<endereço da loja>/**`;
    - Providers > Email **ligado** (é o login da equipe) e "Allow new users to sign up" **desligado**; senha mínima de 10 caracteres.
-5. **Supabase > Edge Functions > Secrets**: `SITE_URL`, `ALLOWED_ORIGINS`, `RATE_LIMIT_SALT` e as quatro do EmailJS ([EMAILJS.md](EMAILJS.md)).
+5. **Supabase > Edge Functions > Secrets**: `SITE_URL`, `ALLOWED_ORIGINS` e `RATE_LIMIT_SALT`.
 6. **Conta do dono**: Authentication > Users > Add user (marque "Auto Confirm User") e, no SQL Editor:
    ```sql
    insert into public.profiles (id, full_name, email, role, is_active)
    select id, 'Nome Completo', email, 'OWNER', true from auth.users where email = 'email@dominio.com';
    ```
    Alternativa pela linha de comando: `npm run owner:create` (veja o cabeçalho de `scripts/create-owner.mjs`). As demais contas o dono cria em Configurações > Equipe.
-7. **Painel > Configurações**: WhatsApp, e-mail que recebe os pedidos, taxa de entrega, endereço de retirada, dias e períodos, chave PIX. Depois, **Produtos** (as categorias ficam no botão **Categorias**).
+7. **Painel > Configurações**: WhatsApp da loja (recebe os pedidos), taxa de entrega, endereço de retirada, dias e períodos, chave PIX. Depois, **Produtos** (as categorias ficam no botão **Categorias**).
 
 Pela linha de comando (alternativa ao workflow):
 
@@ -43,7 +43,7 @@ npx supabase login
 npx supabase link --project-ref SEU_PROJECT_REF
 npx supabase db push --dry-run
 npx supabase db push
-npx supabase functions deploy create-order notify-order admin-users
+npx supabase functions deploy create-order admin-users
 npx supabase secrets set --env-file supabase/functions/.env.production   # arquivo fora do Git
 ```
 
@@ -83,9 +83,8 @@ Depois: publique as Edge Functions, configure os segredos, atualize as variávei
 
 ## Monitoramento
 
-- **Painel da loja**: Pedidos (resumo do dia) e o histórico de e-mails de cada pedido.
-- **Supabase > Edge Functions > Logs**: `create-order.created`, `notify.email` (enviado, falhou), `*.rejected` (erros de regra) e `*.error` (inesperados). Os logs não trazem nome, telefone nem endereço.
-- **EmailJS > History**: envios e cota do mês (200 no plano grátis).
+- **Painel da loja**: Pedidos (resumo do dia) e o histórico de cada pedido.
+- **Supabase > Edge Functions > Logs**: `create-order.created`, `*.rejected` (erros de regra) e `*.error` (inesperados). Os logs não trazem nome, telefone nem endereço.
 
 ## Solução de problemas
 
@@ -93,7 +92,7 @@ Depois: publique as Edge Functions, configure os segredos, atualize as variávei
 |---|---|---|
 | "Loja em configuração" | Build sem as variáveis `VITE_SUPABASE_*` | Configure as variáveis e rode o deploy |
 | "Não foi possível falar com o servidor da loja" ao finalizar pedido ou em ações da equipe | Origem da loja fora de `ALLOWED_ORIGINS` (ou função fora do ar) | Ajuste o segredo (só a origem, ex.: `https://usuario.github.io`). Sem `ALLOWED_ORIGINS`, as funções usam a origem de `SITE_URL`; sem os dois, liberam qualquer origem e registram `cors.not_configured` no log |
-| E-mail não chega | Segredos do EmailJS ausentes, envio pelo servidor não liberado ou cota esgotada | Histórico do pedido no painel, logs `notify.email`, EmailJS > History |
+| Botão "Enviar pedido pelo WhatsApp" não aparece | WhatsApp da loja vazio | Configurações > Loja > WhatsApp da loja |
 | Painel não avisa pedidos na hora | Tempo real desligado | O painel cai para atualização a cada 15 s; confira Database > Replication > `supabase_realtime` |
 | Pessoa da equipe não entra | Conta desativada, sem profile ou provedor Email desligado | Configurações > Equipe; Authentication > Providers |
 | Atualizar a página dá 404 no Pages | Build sem o pós-processamento | Use `npm run build` (roda `scripts/postbuild.mjs`) |

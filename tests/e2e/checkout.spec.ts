@@ -3,7 +3,6 @@ import {
   addToCartFromProductPage,
   callFunction,
   createTestProduct,
-  emailsTo,
   expect,
   fillCustomer,
   getStock,
@@ -28,12 +27,13 @@ async function countOrdersForPhone(phoneDigits: string) {
 }
 
 test.describe("checkout", () => {
-  test("entrega com PIX: taxa fixa, e-mail de confirmação e página do pedido com PIX e WhatsApp", async ({ page }) => {
+  test("entrega com PIX: taxa fixa, sem e-mail e página do pedido com PIX e envio pelo WhatsApp", async ({ page }) => {
     const product = await createTestProduct({ stock: 5, priceCents: 2500 });
-    const email = `e2e-${Date.now()}-${Math.floor(Math.random() * 1000)}@example.com`;
     await addToCartFromProductPage(page, product, 2);
     await goToCheckout(page);
-    await fillCustomer(page, uniqueMobile(), email);
+    await fillCustomer(page, uniqueMobile());
+    // Toda a comunicação é pelo WhatsApp: o checkout não pede e-mail.
+    await expect(page.getByRole("textbox", { name: /E-mail/ })).toHaveCount(0);
 
     await page.getByRole("radio", { name: /Entrega/ }).check();
     await page.getByLabel("Rua", { exact: true }).fill("Rua das Flores");
@@ -46,7 +46,7 @@ test.describe("checkout", () => {
     await page.getByTestId("place-order").click();
 
     await expect(page).toHaveURL(/\/pedido\/[a-f0-9]{48}\?novo=1/);
-    await expect(page.getByTestId("order-created")).toContainText("Enviamos o resumo");
+    await expect(page.getByTestId("order-created")).toContainText("envie o pedido");
     await expect(page.getByTestId("order-status")).toHaveText("Recebido");
     await expect(page.getByTestId("order-total")).toHaveText("R$ 55,00");
     await expect(page.getByTestId("pix-key")).toHaveText("pix@doceria.local");
@@ -60,8 +60,6 @@ test.describe("checkout", () => {
     expect(href).toContain(`2x ${product.name} — R$ 50,00`);
     expect(href).toContain("Total: R$ 55,00");
 
-    const sent = await emailsTo(email);
-    expect(sent.map((e) => e.subject)).toEqual([`Recebemos seu pedido #${code}`]);
     expect(await getStock(product.id)).toBe(3);
     await expect(page.getByTestId("cart-count")).toHaveText("0");
   });

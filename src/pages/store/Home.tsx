@@ -71,7 +71,7 @@ export default function Home() {
           </div>
 
           <p className="relative z-[2] mt-12 max-w-[520px] text-pretty text-[clamp(16px,1.3vw,18px)] leading-relaxed text-[#5A4330] sm:mt-8">
-            Massa fermentada com calma, manteiga de verdade e chocolate que escorre quente. Cada fornada sai crocante por fora e macia no centro, do nosso forno direto pra sua mesa em Cachoeiro de Itapemirim.
+            Ingredientes de verdade, preparo artesanal e muito carinho em cada detalhe. Cookies feitos para surpreender pelo aroma, pela textura e por aquele sabor especial que transforma cada mordida em um momento inesquecível.
           </p>
 
           <div className="relative z-[2] mt-7 flex flex-wrap items-center justify-center gap-3.5 sm:mt-9">
@@ -133,8 +133,8 @@ export default function Home() {
                   : "Retire no nosso endereço sem custo.",
               },
               {
-                title: "Confirmação no e-mail e WhatsApp",
-                text: `Você recebe o resumo por e-mail e fala com a gente pelo WhatsApp. Pagamento: ${payments || "combinado no pedido"}.`,
+                title: "Tudo pelo WhatsApp",
+                text: `Você envia o pedido pronto no nosso WhatsApp e recebe a confirmação por lá. Pagamento: ${payments || "combinado no pedido"}.`,
               },
             ].map((step, index) => (
               <li key={step.title} className="card relative p-6">

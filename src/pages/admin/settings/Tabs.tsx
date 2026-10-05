@@ -15,7 +15,7 @@ import { friendlyMessage } from "@/lib/errors";
 import { PAYMENT_METHOD_LABEL, PERIOD_LABEL } from "@/lib/labels";
 import { centsToInput, parseBRLToCents } from "@/lib/money";
 import type { AppRole, DayPeriod, PaymentMethod } from "@/types/domain";
-import { formatBrazilPhone, isEmail, normalizeBrazilPhone } from "@shared/validation.ts";
+import { formatBrazilPhone, normalizeBrazilPhone } from "@shared/validation.ts";
 import { useSettingsForm } from "./useSettingsForm";
 
 function Card({ title, description, children, footer }: { title: string; description?: ReactNode; children: ReactNode; footer?: ReactNode }) {
@@ -54,7 +54,7 @@ function toggleIn<T>(list: T[], value: T): T[] {
 // -----------------------------------------------------------------------------
 export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
   const form = useSettingsForm(settings, [
-    "store_name", "tagline", "whatsapp_phone", "notify_email", "instagram_url", "institutional_url",
+    "store_name", "tagline", "whatsapp_phone", "instagram_url", "institutional_url",
     "accepting_orders", "pause_message",
   ] as const);
   const [phoneInput, setPhoneInput] = useState(formatBrazilPhone(settings.whatsapp_phone));
@@ -64,13 +64,10 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
   const submit = () => {
     const phone = phoneInput.trim() ? normalizeBrazilPhone(phoneInput) : null;
     if (phoneInput.trim() && !phone) return setError("WhatsApp inválido. Use DDD + número.");
-    const email = v.notify_email?.trim() || null;
-    if (email && !isEmail(email)) return setError("E-mail inválido.");
     setError(null);
     form.save({
       ...v,
       whatsapp_phone: phone,
-      notify_email: email,
       instagram_url: v.instagram_url.trim(),
       institutional_url: v.institutional_url.trim(),
     });
@@ -87,7 +84,7 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
         )}
       </Card>
 
-      <Card title="Dados da loja" description="Aparecem na loja, nos e-mails e nas mensagens de WhatsApp."
+      <Card title="Dados da loja" description="Aparecem na loja e nas mensagens de WhatsApp."
         footer={<Button onClick={submit} loading={form.saving} data-testid="save-store">Salvar</Button>}>
         {error && <Notice tone="danger">{error}</Notice>}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -95,11 +92,8 @@ export function StoreTab({ settings }: { settings: StoreSettingsRow }) {
           <Field label="Frase de destaque" optional hint="Título da página inicial.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={v.tagline} maxLength={160} onChange={(e) => form.set("tagline", e.target.value)} />}
           </Field>
-          <Field label="WhatsApp da loja" hint="Recebe as mensagens dos clientes.">
+          <Field label="WhatsApp da loja" hint="Recebe os pedidos: o cliente envia o resumo para este número.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="tel" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="(28) 99999-9999" />}
-          </Field>
-          <Field label="E-mail que recebe os pedidos" optional hint="Chega um aviso a cada pedido novo.">
-            {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="email" value={v.notify_email ?? ""} onChange={(e) => form.set("notify_email", e.target.value)} />}
           </Field>
           <Field label="Instagram" optional>
             {({ id }) => <Input id={id} type="url" value={v.instagram_url} onChange={(e) => form.set("instagram_url", e.target.value)} placeholder="https://instagram.com/suamarca" />}
@@ -193,7 +187,7 @@ export function DeliveryTab({ settings }: { settings: StoreSettingsRow }) {
 
 // -----------------------------------------------------------------------------
 export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
-  const form = useSettingsForm(settings, ["payment_methods", "pix_key", "pix_holder", "email_customer_on_status"] as const);
+  const form = useSettingsForm(settings, ["payment_methods", "pix_key", "pix_holder"] as const);
   const [error, setError] = useState<string | null>(null);
   const v = form.values;
 
@@ -216,7 +210,7 @@ export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
           ))}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Chave PIX" hint="Aparece para o cliente depois do pedido e no e-mail.">
+          <Field label="Chave PIX" hint="Aparece para o cliente depois do pedido e na mensagem de WhatsApp.">
             {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={v.pix_key} maxLength={120} onChange={(e) => form.set("pix_key", e.target.value)} />}
           </Field>
           <Field label="Nome do favorecido" optional>
@@ -225,14 +219,6 @@ export function PaymentsTab({ settings }: { settings: StoreSettingsRow }) {
         </div>
       </Card>
 
-      <Card title="Avisos por e-mail ao cliente" description="A confirmação de recebimento sempre é enviada quando o cliente informa e-mail.">
-        <Checkbox
-          checked={v.email_customer_on_status}
-          onChange={(value) => form.save({ email_customer_on_status: value })}
-          label="Avisar também quando o pedido for confirmado, sair para entrega, ficar pronto para retirada ou for cancelado"
-          description="O plano grátis do EmailJS permite 200 e-mails por mês. Se estiver perto do limite, desligue e use o WhatsApp."
-        />
-      </Card>
     </div>
   );
 }

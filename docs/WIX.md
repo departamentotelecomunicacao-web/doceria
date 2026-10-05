@@ -11,7 +11,7 @@ O Wix é a camada institucional (marca, história, SEO). A loja no GitHub Pages 
 | Cardápio (`/cardapio`) | Cardápio incorporado (ver abaixo) + botão "Ver cardápio completo" |
 | Entrega e retirada | Bairros atendidos, faixas de frete (as mesmas configuradas no painel), horários |
 | Perguntas frequentes | Encomendas, alergênicos, validade, pagamento, eventos |
-| Contato | WhatsApp, Instagram, e-mail |
+| Contato | WhatsApp e Instagram |
 | Políticas | Link para `https://loja.../privacidade` (política única, mantida pela loja) |
 
 Links de compra no Wix devem apontar para a loja com UTM, por exemplo:

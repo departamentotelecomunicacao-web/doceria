@@ -61,19 +61,8 @@ jobs:
       - name: Subir Supabase local
         run: npx supabase start -x studio,imgproxy,vector,logflare,supavisor,postgres-meta,mailpit
 
-      - name: Variáveis locais (chaves do supabase status + stub de e-mail)
+      - name: Variáveis locais (chaves do supabase status)
         run: npm run env:test
-
-      # O stub só responde GET em /__emails; esperas com HEAD nunca terminam.
-      - name: Stub do EmailJS
-        timeout-minutes: 2
-        run: |
-          nohup node tests/stubs/email-stub.mjs > stub.log 2>&1 &
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:54401/__emails > /dev/null && exit 0
-            sleep 1
-          done
-          echo "Stub do EmailJS não respondeu"; cat stub.log; exit 1
 
       - name: Servir Edge Functions
         timeout-minutes: 5
@@ -106,7 +95,6 @@ jobs:
             playwright-report
             test-results
             functions.log
-            stub.log
           retention-days: 7
 
   deploy:

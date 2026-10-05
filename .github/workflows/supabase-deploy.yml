@@ -57,4 +57,4 @@ jobs:
 
       - name: Publicar Edge Functions
         if: inputs.publicar_funcoes
-        run: npx supabase functions deploy create-order notify-order admin-users --project-ref "$PROJECT_REF"
+        run: npx supabase functions deploy create-order admin-users --project-ref "$PROJECT_REF"
