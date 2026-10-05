@@ -22,8 +22,8 @@ export function Header() {
       )}
       <div className="container-page flex h-16 items-center justify-between gap-2 sm:gap-4">
         <Link to="/" className="flex min-w-0 items-center gap-2.5" aria-label={storeName ? `${storeName}, página inicial` : "Página inicial"}>
-          <img src={`${import.meta.env.BASE_URL}marca/mascote.webp`} alt="" width={40} height={40} decoding="async"
-            className="size-10 shrink-0 rounded-xl object-cover ring-1 ring-black/5" />
+          <img src={`${import.meta.env.BASE_URL}marca/logo.webp`} alt="" width={44} height={44} decoding="async"
+            className="size-11 shrink-0 rounded-full" />
           <span className="truncate font-display text-lg font-semibold tracking-tight text-cocoa-900 min-[380px]:text-xl">
             {storeName || <span className="skeleton inline-block h-5 w-24 rounded-md align-middle" />}
           </span>
